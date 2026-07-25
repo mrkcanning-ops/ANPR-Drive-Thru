@@ -300,36 +300,34 @@ export default function Home() {
                     </button>
                   </div>
 
-                  {/* Customer Cards */}
-                  <div className="space-y-2 mb-3">
+                  {/* Customer Cards - Horizontal */}
+                  <div className="flex gap-2 overflow-x-auto pb-2 mb-3">
                     {vehicleCustomers.map((vc) => (
                       <div
                         key={vc.id}
                         onClick={() => setSelectedCustomer(vc.customer)}
-                        className={`p-2 rounded border-2 cursor-pointer transition-all ${
+                        className={`flex-shrink-0 w-40 p-2 rounded border-2 cursor-pointer transition-all ${
                           selectedCustomer?.id === vc.customer?.id
                             ? 'border-blue-500 bg-blue-50'
-                            : 'border-gray-300 bg-white hover:bg-gray-50'
+                            : 'border-gray-300 bg-white hover:border-blue-300'
                         }`}
                       >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="text-xs font-bold text-gray-900">{vc.customer?.name}</p>
-                            <p className="text-xs text-gray-600">
-                              {vc.primary_driver ? '👑 Primary' : '🚗'} {vc.relationship}
-                            </p>
-                          </div>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              removeCustomerFromVehicle(vc.id);
-                            }}
-                            className="bg-red-500 text-white px-2 py-1 rounded text-xs font-semibold hover:bg-red-600"
-                          >
-                            Remove
-                          </button>
+                        <div className="mb-2">
+                          <p className="text-xs font-bold text-gray-900 truncate">{vc.customer?.name}</p>
+                          <p className="text-xs text-gray-600">
+                            {vc.primary_driver ? '👑 Primary' : '🚗'} {vc.relationship}
+                          </p>
                         </div>
-                        <p className="text-xs text-yellow-600 mt-1">⭐ {vc.customer?.loyalty_points} Points</p>
+                        <p className="text-xs text-yellow-600 mb-2">⭐ {vc.customer?.loyalty_points} Points</p>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeCustomerFromVehicle(vc.id);
+                          }}
+                          className="w-full bg-red-500 text-white px-1 py-1 rounded text-xs font-semibold hover:bg-red-600"
+                        >
+                          Remove
+                        </button>
                       </div>
                     ))}
                   </div>
