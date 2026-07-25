@@ -1,13 +1,21 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { supabase, Order, DailyStats } from '@/lib/supabase';
+import { supabase, Order, DailyStats, Vehicle, Customer, VehicleCustomer } from '@/lib/supabase';
 import { Sidebar } from '@/components/Sidebar';
 import { BottomNav } from '@/components/BottomNav';
 
 export default function Home() {
   const [time, setTime] = useState<string>('');
   const [currentVehicle, setCurrentVehicle] = useState({ plate: 'AB12 CDE', name: 'John Smith', time: '14 sec', status: 'serving', statusLabel: 'Ordering', car: 'Blue Ford Focus', points: 240 });
+  
+  // New state for multi-customer vehicle support
+  const [vehicle, setVehicle] = useState<Vehicle | null>(null);
+  const [vehicleCustomers, setVehicleCustomers] = useState<(VehicleCustomer & { customer: Customer })[]>([]);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [showAddCustomer, setShowAddCustomer] = useState(false);
+  const [availableCustomers, setAvailableCustomers] = useState<Customer[]>([]);
+  
   const [stats, setStats] = useState({
     activeOrders: 0,
     totalOrders: 0,
@@ -30,6 +38,7 @@ export default function Home() {
 
   useEffect(() => {
     fetchDashboardData();
+    fetchVehicleData('AB12 CDE'); // Load first vehicle on mount
     // Subscribe to real-time updates
     const subscription = supabase
       .channel('orders')
@@ -74,6 +83,99 @@ export default function Home() {
     }
   };
 
+  // Fetch vehicle details and linked customers
+  const fetchVehicleData = async (plate: string) => {
+    try {
+      // Fetch vehicle by plate
+      const { data: vehicleData, error: vehicleError } = await supabase
+        .from('vehicles')
+        .select('*')
+        .eq('plate', plate)
+        .single();
+
+      if (vehicleError) {
+        console.error('Error fetching vehicle:', vehicleError);
+        return;
+      }
+
+      setVehicle(vehicleData);
+
+      // Fetch customers linked to this vehicle
+      const { data: customersData, error: customersError } = await supabase
+        .from('vehicle_customers')
+        .select('*, customer:customer_id(*)')
+        .eq('vehicle_id', vehicleData.id);
+
+      if (customersError) {
+        console.error('Error fetching vehicle customers:', customersError);
+        return;
+      }
+
+      setVehicleCustomers(customersData || []);
+      
+      // Set first customer as selected (primary driver if available)
+      const primaryDriver = customersData?.find(vc => vc.primary_driver);
+      if (primaryDriver && primaryDriver.customer) {
+        setSelectedCustomer(primaryDriver.customer);
+      } else if (customersData && customersData.length > 0 && customersData[0].customer) {
+        setSelectedCustomer(customersData[0].customer);
+      }
+
+      // Fetch all available customers for adding
+      const { data: allCustomers } = await supabase
+        .from('customers')
+        .select('*');
+
+      setAvailableCustomers(allCustomers || []);
+    } catch (error) {
+      console.error('Error fetching vehicle data:', error);
+    }
+  };
+
+  // Add customer to vehicle
+  const addCustomerToVehicle = async (customerId: string) => {
+    if (!vehicle) return;
+    
+    try {
+      const { error } = await supabase
+        .from('vehicle_customers')
+        .insert([
+          {
+            vehicle_id: vehicle.id,
+            customer_id: customerId,
+            relationship: 'shared',
+            primary_driver: false,
+          },
+        ]);
+
+      if (error) throw error;
+      
+      // Refresh vehicle customers
+      await fetchVehicleData(vehicle.plate);
+      setShowAddCustomer(false);
+    } catch (error) {
+      console.error('Error adding customer to vehicle:', error);
+    }
+  };
+
+  // Remove customer from vehicle
+  const removeCustomerFromVehicle = async (vehicleCustomerId: string) => {
+    try {
+      const { error } = await supabase
+        .from('vehicle_customers')
+        .delete()
+        .eq('id', vehicleCustomerId);
+
+      if (error) throw error;
+      
+      if (vehicle) {
+        await fetchVehicleData(vehicle.plate);
+      }
+    } catch (error) {
+      console.error('Error removing customer from vehicle:', error);
+    }
+  };
+
   return (
     <div className="flex flex-col lg:flex-row min-h-screen bg-gray-50 pb-16 lg:pb-0">
       {/* Desktop Sidebar */}
@@ -105,7 +207,10 @@ export default function Home() {
               ].map((vehicle) => (
                 <button
                   key={vehicle.plate}
-                  onClick={() => setCurrentVehicle(vehicle)}
+                  onClick={() => {
+                    setCurrentVehicle(vehicle);
+                    fetchVehicleData(vehicle.plate);
+                  }}
                   className={`flex-shrink-0 w-32 p-2 rounded border-2 text-xs transition-all cursor-pointer ${
                     vehicle.status === 'serving'
                       ? 'border-blue-500 bg-blue-50'
@@ -129,65 +234,150 @@ export default function Home() {
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 flex-1 overflow-hidden">
             {/* Left/Middle Content - Scrollable */}
             <div className="lg:col-span-2 bg-white rounded shadow-sm overflow-y-auto">
-              {/* Vehicle Details Card */}
-              <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded p-3 mb-3">
-                <div className="flex flex-col gap-3">
-                  {/* UK Registration Plate - SVG */}
-                  <div className="flex justify-center mb-2">
-                    <svg width="560" height="80" viewBox="0 0 560 80" xmlns="http://www.w3.org/2000/svg">
-                      {/* Outer rounded rectangle - yellow */}
-                      <rect x="1" y="1" width="558" height="78" rx="12" ry="12" fill="#F4D03F" />
-                      
-                      {/* Black outer border */}
-                      <rect x="1" y="1" width="558" height="78" rx="12" ry="12" fill="none" stroke="#000000" strokeWidth="2.5" />
-                      
-                      {/* Blue EU Section - Square with rounded corners */}
-                      <rect x="8" y="8" width="62" height="64" rx="5" ry="5" fill="#003DA5" stroke="#000000" strokeWidth="1.5" />
-                      
-                      {/* EU Stars - 12 stars arranged in circle */}
-                      <circle cx="24" cy="16" r="1.8" fill="#FFD700" />
-                      <circle cx="32" cy="16" r="1.8" fill="#FFD700" />
-                      <circle cx="36" cy="22" r="1.8" fill="#FFD700" />
-                      <circle cx="37" cy="30" r="1.8" fill="#FFD700" />
-                      <circle cx="32" cy="40" r="1.8" fill="#FFD700" />
-                      <circle cx="24" cy="40" r="1.8" fill="#FFD700" />
-                      <circle cx="16" cy="38" r="1.8" fill="#FFD700" />
-                      <circle cx="14" cy="30" r="1.8" fill="#FFD700" />
-                      <circle cx="16" cy="22" r="1.8" fill="#FFD700" />
-                      <circle cx="28" cy="28" r="1.8" fill="#FFD700" />
-                      <circle cx="28" cy="16" r="1.8" fill="#FFD700" />
-                      <circle cx="28" cy="40" r="1.8" fill="#FFD700" />
-                      
-                      {/* GB Text - Below stars */}
-                      <text x="28" y="58" fontFamily="Arial, sans-serif" fontSize="13" fontWeight="bold" fill="#FFFFFF" textAnchor="middle">GB</text>
-                      
-                      {/* Registration Number Text - Dynamic */}
-                      <text x="290" y="56" fontFamily="'Arial Black', Arial, sans-serif" fontSize="68" fontWeight="900" fill="#000000" textAnchor="middle" letterSpacing="2">{currentVehicle.plate}</text>
-                    </svg>
-                  </div>
-                  {/* Customer Details */}
-                  <div className="border-t-2 border-blue-300 pt-2">
-                    <p className="text-sm text-gray-700 font-semibold">{currentVehicle.name}</p>
-                    <p className="text-sm text-gray-600">{currentVehicle.car}</p>
-                    <p className="text-xs text-yellow-600 mt-1">⭐ Gold Customer • {currentVehicle.points} Points</p>
-                  </div>
-                  {/* Vehicle Info */}
-                  <div className="grid grid-cols-3 gap-2 pt-2">
-                    <div className="bg-gray-200 rounded border border-gray-400 p-2">
-                      <p className="text-xs text-gray-600 font-semibold mb-1">Vehicle</p>
-                      <p className="text-xs text-gray-700 font-semibold">Ford Focus</p>
+              {/* Vehicle Info Card */}
+              {vehicle && (
+                <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded p-3 mb-3">
+                  <div className="flex flex-col gap-3">
+                    {/* UK Registration Plate */}
+                    <div className="flex justify-center mb-2">
+                      <svg width="560" height="80" viewBox="0 0 560 80" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="1" y="1" width="558" height="78" rx="12" ry="12" fill="#F4D03F" />
+                        <rect x="1" y="1" width="558" height="78" rx="12" ry="12" fill="none" stroke="#000000" strokeWidth="2.5" />
+                        <rect x="8" y="8" width="62" height="64" rx="5" ry="5" fill="#003DA5" stroke="#000000" strokeWidth="1.5" />
+                        <circle cx="24" cy="16" r="1.8" fill="#FFD700" />
+                        <circle cx="32" cy="16" r="1.8" fill="#FFD700" />
+                        <circle cx="36" cy="22" r="1.8" fill="#FFD700" />
+                        <circle cx="37" cy="30" r="1.8" fill="#FFD700" />
+                        <circle cx="32" cy="40" r="1.8" fill="#FFD700" />
+                        <circle cx="24" cy="40" r="1.8" fill="#FFD700" />
+                        <circle cx="16" cy="38" r="1.8" fill="#FFD700" />
+                        <circle cx="14" cy="30" r="1.8" fill="#FFD700" />
+                        <circle cx="16" cy="22" r="1.8" fill="#FFD700" />
+                        <circle cx="28" cy="28" r="1.8" fill="#FFD700" />
+                        <circle cx="28" cy="16" r="1.8" fill="#FFD700" />
+                        <circle cx="28" cy="40" r="1.8" fill="#FFD700" />
+                        <text x="28" y="58" fontFamily="Arial, sans-serif" fontSize="13" fontWeight="bold" fill="#FFFFFF" textAnchor="middle">GB</text>
+                        <text x="290" y="56" fontFamily="'Arial Black', Arial, sans-serif" fontSize="68" fontWeight="900" fill="#000000" textAnchor="middle" letterSpacing="2">{vehicle.plate}</text>
+                      </svg>
                     </div>
-                    <div className="bg-gray-200 rounded border border-gray-400 p-2">
-                      <p className="text-xs text-blue-600 font-semibold mb-1">Colour</p>
-                      <p className="text-xs text-gray-700 font-semibold">Blue</p>
+
+                    {/* Vehicle Details */}
+                    <div className="border-t-2 border-blue-300 pt-2">
+                      <p className="text-sm text-gray-700 font-semibold">{vehicle.make} {vehicle.model}</p>
+                      <p className="text-sm text-gray-600">{vehicle.colour} • {vehicle.year}</p>
                     </div>
-                    <div className="bg-gray-200 rounded border border-gray-400 p-2">
-                      <p className="text-xs text-gray-600 font-semibold mb-1">Last Visit</p>
-                      <p className="text-xs text-gray-700 font-semibold">Yesterday</p>
+
+                    {/* Vehicle Specs */}
+                    <div className="grid grid-cols-3 gap-2 pt-2">
+                      <div className="bg-gray-200 rounded border border-gray-400 p-2">
+                        <p className="text-xs text-gray-600 font-semibold mb-1">Make</p>
+                        <p className="text-xs text-gray-700 font-semibold">{vehicle.make}</p>
+                      </div>
+                      <div className="bg-gray-200 rounded border border-gray-400 p-2">
+                        <p className="text-xs text-blue-600 font-semibold mb-1">Colour</p>
+                        <p className="text-xs text-gray-700 font-semibold">{vehicle.colour}</p>
+                      </div>
+                      <div className="bg-gray-200 rounded border border-gray-400 p-2">
+                        <p className="text-xs text-gray-600 font-semibold mb-1">Year</p>
+                        <p className="text-xs text-gray-700 font-semibold">{vehicle.year}</p>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              )}
+
+              {/* Customers Linked to Vehicle */}
+              {vehicle && (
+                <div className="bg-purple-50 rounded p-3 mb-3 border border-purple-200">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-bold text-gray-900">👥 Customers Using This Vehicle</p>
+                    <button
+                      onClick={() => setShowAddCustomer(!showAddCustomer)}
+                      className="bg-emerald-600 text-white px-2 py-1 rounded text-xs font-semibold hover:bg-emerald-700"
+                    >
+                      {showAddCustomer ? '✕' : '+ Add'}
+                    </button>
+                  </div>
+
+                  {/* Customer Cards */}
+                  <div className="space-y-2 mb-3">
+                    {vehicleCustomers.map((vc) => (
+                      <div
+                        key={vc.id}
+                        onClick={() => setSelectedCustomer(vc.customer)}
+                        className={`p-2 rounded border-2 cursor-pointer transition-all ${
+                          selectedCustomer?.id === vc.customer?.id
+                            ? 'border-blue-500 bg-blue-50'
+                            : 'border-gray-300 bg-white hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-xs font-bold text-gray-900">{vc.customer?.name}</p>
+                            <p className="text-xs text-gray-600">
+                              {vc.primary_driver ? '👑 Primary' : '🚗'} {vc.relationship}
+                            </p>
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeCustomerFromVehicle(vc.id);
+                            }}
+                            className="bg-red-500 text-white px-2 py-1 rounded text-xs font-semibold hover:bg-red-600"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                        <p className="text-xs text-yellow-600 mt-1">⭐ {vc.customer?.loyalty_points} Points</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Add Customer Dropdown */}
+                  {showAddCustomer && (
+                    <div className="bg-white rounded p-2 border border-emerald-300">
+                      <p className="text-xs font-semibold text-gray-900 mb-2">Select customer to add:</p>
+                      <select
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            addCustomerToVehicle(e.target.value);
+                            e.target.value = '';
+                          }
+                        }}
+                        className="w-full text-xs border border-gray-300 rounded p-1"
+                      >
+                        <option value="">-- Choose a customer --</option>
+                        {availableCustomers
+                          .filter((c) => !vehicleCustomers.some((vc) => vc.customer_id === c.id))
+                          .map((customer) => (
+                            <option key={customer.id} value={customer.id}>
+                              {customer.name}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Selected Customer Profile */}
+              {selectedCustomer && (
+                <>
+                  {/* Customer Details */}
+                  <div className="bg-amber-50 rounded p-2 mb-2 border border-amber-200">
+                    <p className="text-xs font-semibold text-gray-700 mb-1">📝 Customer Notes</p>
+                    <p className="text-xs text-gray-900">Prefers oat milk</p>
+                  </div>
+
+                  {/* Loyalty Status */}
+                  <div className="bg-yellow-50 rounded p-2 mb-2 border border-yellow-200">
+                    <p className="text-xs font-semibold text-gray-700 mb-1">⭐ Loyalty Status</p>
+                    <p className="text-xs text-yellow-700 font-bold">Gold Customer</p>
+                    <p className="text-xs text-gray-600 mt-1">Total Points: {selectedCustomer.loyalty_points}</p>
+                    <p className="text-xs text-gray-600">Next Reward: {selectedCustomer.loyalty_points + 20} points</p>
+                  </div>
+                </>
+              )}
 
               {/* Previous Order */}
               <div className="bg-gray-50 rounded p-2 mb-2">
@@ -198,20 +388,6 @@ export default function Home() {
                   <p className="text-xs text-gray-900">🥓 Bacon Roll</p>
                 </div>
                 <p className="text-xs font-bold text-gray-900">Total: <span className="text-emerald-600">£7.70</span></p>
-              </div>
-
-              {/* Notes & Loyalty */}
-              <div className="grid grid-cols-2 gap-2 mb-2">
-                <div className="bg-amber-50 rounded p-2 border border-amber-200">
-                  <p className="text-xs font-semibold text-gray-700 mb-1">📝 Notes</p>
-                  <p className="text-xs text-gray-900">Prefers oat milk</p>
-                </div>
-                <div className="bg-yellow-50 rounded p-2 border border-yellow-200">
-                  <p className="text-xs font-semibold text-gray-700 mb-1">⭐ Loyalty Status</p>
-                  <p className="text-xs text-yellow-700 font-bold">Gold Customer</p>
-                  <p className="text-xs text-gray-600 mt-1">Total Points: 240</p>
-                  <p className="text-xs text-gray-600">Next Reward: 260 points</p>
-                </div>
               </div>
 
               {/* Suggested Order */}

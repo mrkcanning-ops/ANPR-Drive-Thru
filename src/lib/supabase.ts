@@ -31,3 +31,35 @@ export interface DailyStats {
   total_revenue: number;
   average_order_value: number;
 }
+
+export interface Vehicle {
+  id: string;
+  plate: string;
+  make: string;
+  model: string;
+  colour: string;
+  year?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Customer {
+  id: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  loyalty_points: number;
+  preferences?: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface VehicleCustomer {
+  id: string;
+  vehicle_id: string;
+  customer_id: string;
+  relationship: 'primary' | 'family' | 'shared';
+  primary_driver: boolean;
+  added_date: string;
+  customer?: Customer; // For joined data
+}
