@@ -420,10 +420,10 @@ export default function Home() {
             </div>
 
             {/* Right Sidebar - Camera & Status */}
-            <div className="lg:col-span-2 space-y-3 overflow-y-auto">
+            <div className="lg:col-span-1.5 space-y-2 overflow-y-auto">
               {/* Live Camera Feed */}
               <div className="bg-gray-900 rounded shadow-sm overflow-hidden border border-gray-700">
-                <div className="aspect-video bg-gray-800 flex items-center justify-center relative">
+                <div className="aspect-square bg-gray-800 flex items-center justify-center relative max-h-48">
                   <div className="absolute top-2 left-2 bg-green-600 text-white px-2 py-1 rounded text-xs font-semibold flex items-center gap-1">
                     <span className="w-2 h-2 bg-green-300 rounded-full inline-block"></span>
                     Live Camera - Lane 1
@@ -437,9 +437,9 @@ export default function Home() {
               </div>
 
               {/* Lane Status */}
-              <div className="bg-emerald-600 rounded shadow-sm p-3 text-white">
-                <h3 className="text-xs font-semibold mb-2">Lane Status</h3>
-                <div className="space-y-2 text-xs">
+              <div className="bg-emerald-600 rounded shadow-sm p-2 text-white">
+                <h3 className="text-xs font-semibold mb-1">Lane Status</h3>
+                <div className="space-y-1 text-xs">
                   <div className="flex items-center justify-between bg-emerald-700 rounded px-2 py-1">
                     <span>Lane 1</span>
                     <span className="font-semibold">🟢 Ordering</span>
@@ -456,9 +456,9 @@ export default function Home() {
               </div>
 
               {/* Today's Top Items */}
-              <div className="bg-white rounded shadow-sm p-3">
-                <h3 className="text-xs font-semibold text-gray-900 mb-2">Today's Top Items</h3>
-                <div className="space-y-2">
+              <div className="bg-white rounded shadow-sm p-2">
+                <h3 className="text-xs font-semibold text-gray-900 mb-1">Today's Top Items</h3>
+                <div className="space-y-1">
                   {[
                     { label: '🍵 Latte', value: 24 },
                     { label: '☕ Cappuccino', value: 19 },
