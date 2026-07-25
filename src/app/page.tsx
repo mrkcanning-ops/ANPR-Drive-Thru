@@ -264,29 +264,16 @@ export default function Home() {
                       </div>
 
                       {/* Vehicle Specs */}
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="bg-gray-200 rounded border border-gray-400 p-2">
-                          <p className="text-xs text-gray-600 font-semibold mb-1">Make</p>
-                          <p className="text-xs text-gray-700 font-semibold">{vehicle.make}</p>
-                        </div>
-                        <div className="bg-gray-200 rounded border border-gray-400 p-2">
-                          <p className="text-xs text-gray-600 font-semibold mb-1">Model</p>
-                          <p className="text-xs text-gray-700 font-semibold">{vehicle.model}</p>
-                        </div>
-                        <div className="bg-gray-200 rounded border border-gray-400 p-2">
-                          <p className="text-xs text-blue-600 font-semibold mb-1">Colour</p>
-                          <p className="text-xs text-gray-700 font-semibold">{vehicle.colour}</p>
-                        </div>
-                        <div className="bg-gray-200 rounded border border-gray-400 p-2">
-                          <p className="text-xs text-gray-600 font-semibold mb-1">Year</p>
-                          <p className="text-xs text-gray-700 font-semibold">{vehicle.year}</p>
-                        </div>
+                      <div className="space-y-1 text-sm">
+                        <p className="text-gray-700"><span className="font-semibold">Make:</span> {vehicle.make}</p>
+                        <p className="text-gray-700"><span className="font-semibold">Model:</span> {vehicle.model}</p>
+                        <p className="text-gray-700"><span className="font-semibold">Colour:</span> {vehicle.colour}</p>
+                        <p className="text-gray-700"><span className="font-semibold">Year:</span> {vehicle.year}</p>
                       </div>
                     </div>
 
                     {/* Right Column - Camera Snapshot */}
                     <div className="flex flex-col">
-                      <p className="text-xs font-bold text-gray-700 mb-2">📸 Drive-Through Snapshot</p>
                       <div className="bg-gray-900 rounded border-2 border-gray-700 flex-1 flex items-center justify-center min-h-32 overflow-hidden">
                         <div className="text-center">
                           <p className="text-4xl mb-2">🚗</p>
