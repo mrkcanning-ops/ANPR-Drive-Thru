@@ -230,10 +230,10 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Main Grid Layout - 3 Columns */}
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 flex-1 overflow-hidden">
+          {/* Main Grid Layout - 5 Columns */}
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 flex-1 overflow-hidden">
             {/* Left/Middle Content - Scrollable */}
-            <div className="lg:col-span-2 bg-white rounded shadow-sm overflow-y-auto">
+            <div className="lg:col-span-3 bg-white rounded shadow-sm overflow-y-auto">
               {/* Vehicle Info Card */}
               {vehicle && (
                 <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded p-3 mb-3">
@@ -420,7 +420,7 @@ export default function Home() {
             </div>
 
             {/* Right Sidebar - Camera & Status */}
-            <div className="lg:col-span-1.5 space-y-2 overflow-y-auto">
+            <div className="lg:col-span-2 space-y-2 overflow-y-auto">
               {/* Live Camera Feed */}
               <div className="bg-gray-900 rounded shadow-sm overflow-hidden border border-gray-700">
                 <div className="aspect-square bg-gray-800 flex items-center justify-center relative max-h-48">
