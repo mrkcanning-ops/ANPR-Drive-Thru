@@ -263,17 +263,15 @@ export default function Home() {
                         </svg>
                       </div>
 
-                      {/* Vehicle Details */}
-                      <div className="border-t-2 border-blue-300 pt-2">
-                        <p className="text-sm text-gray-700 font-semibold">{vehicle.make} {vehicle.model}</p>
-                        <p className="text-sm text-gray-600">{vehicle.colour} • {vehicle.year}</p>
-                      </div>
-
                       {/* Vehicle Specs */}
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="grid grid-cols-2 gap-2">
                         <div className="bg-gray-200 rounded border border-gray-400 p-2">
                           <p className="text-xs text-gray-600 font-semibold mb-1">Make</p>
                           <p className="text-xs text-gray-700 font-semibold">{vehicle.make}</p>
+                        </div>
+                        <div className="bg-gray-200 rounded border border-gray-400 p-2">
+                          <p className="text-xs text-gray-600 font-semibold mb-1">Model</p>
+                          <p className="text-xs text-gray-700 font-semibold">{vehicle.model}</p>
                         </div>
                         <div className="bg-gray-200 rounded border border-gray-400 p-2">
                           <p className="text-xs text-blue-600 font-semibold mb-1">Colour</p>
