@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS vehicles (
 -- 2. Create customers table
 CREATE TABLE IF NOT EXISTS customers (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT NOT NULL,
+  name TEXT NOT NULL UNIQUE,
   email TEXT,
   phone TEXT,
   loyalty_points INTEGER DEFAULT 0,
@@ -36,13 +36,9 @@ CREATE TABLE IF NOT EXISTS vehicle_customers (
   UNIQUE(vehicle_id, customer_id)
 );
 
--- 4. Create indexes for better query performance
-CREATE INDEX idx_vehicle_customers_vehicle_id ON vehicle_customers(vehicle_id);
-CREATE INDEX idx_vehicle_customers_customer_id ON vehicle_customers(customer_id);
-CREATE INDEX idx_vehicles_plate ON vehicles(plate);
-
--- 5. Insert sample data for testing
-INSERT INTO vehicles (plate, make, model, colour, year) VALUES
+-- 4. Insert sample vehicles
+INSERT INTO vehicles (plate, make, model, colour, year) 
+VALUES
   ('AB12 CDE', 'Ford', 'Focus', 'Blue', 2020),
   ('CD45 EFG', 'Audi', 'A3', 'Red', 2021),
   ('EF78 GHI', 'BMW', '3 Series', 'Silver', 2019),
@@ -50,40 +46,41 @@ INSERT INTO vehicles (plate, make, model, colour, year) VALUES
   ('IJ23 KLM', 'Toyota', 'Corolla', 'White', 2023)
 ON CONFLICT (plate) DO NOTHING;
 
-INSERT INTO customers (name, email, phone, loyalty_points, preferences) VALUES
+-- 5. Insert sample customers
+INSERT INTO customers (name, email, phone, loyalty_points, preferences)
+VALUES
   ('John Smith', 'john@example.com', '07700111111', 240, '{"oatMilk": true, "sugarless": false}'),
   ('Sarah Jones', 'sarah@example.com', '07700222222', 180, '{"oatMilk": false, "sugarless": true}'),
   ('Mike Brown', 'mike@example.com', '07700333333', 95, '{"oatMilk": true, "sugarless": true}'),
   ('Emma Davis', 'emma@example.com', '07700444444', 320, '{"oatMilk": false, "sugarless": false}'),
   ('Jane Smith', 'jane@example.com', '07700555555', 150, '{"oatMilk": true, "sugarless": false}'),
   ('Tom Johnson', 'tom@example.com', '07700666666', 95, '{"oatMilk": false, "sugarless": false}')
-ON CONFLICT DO NOTHING;
+ON CONFLICT (name) DO NOTHING;
 
--- Link customers to vehicles
-INSERT INTO vehicle_customers (vehicle_id, customer_id, relationship, primary_driver) 
-SELECT v.id, c.id, 'primary', true
-FROM vehicles v
-JOIN customers c ON c.name = 'John Smith'
-WHERE v.plate = 'AB12 CDE'
-ON CONFLICT DO NOTHING;
+-- 6. Create indexes for better query performance
+CREATE INDEX IF NOT EXISTS idx_vehicle_customers_vehicle_id ON vehicle_customers(vehicle_id);
+CREATE INDEX IF NOT EXISTS idx_vehicle_customers_customer_id ON vehicle_customers(customer_id);
+CREATE INDEX IF NOT EXISTS idx_vehicles_plate ON vehicles(plate);
+CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name);
 
+-- 7. Link customers to vehicles (Step-by-step approach for reliability)
+
+-- Link John Smith to AB12 CDE (primary driver)
 INSERT INTO vehicle_customers (vehicle_id, customer_id, relationship, primary_driver)
-SELECT v.id, c.id, 'family', false
-FROM vehicles v
-JOIN customers c ON c.name = 'Jane Smith'
-WHERE v.plate = 'AB12 CDE'
+SELECT (SELECT id FROM vehicles WHERE plate = 'AB12 CDE'), (SELECT id FROM customers WHERE name = 'John Smith'), 'primary', true
 ON CONFLICT DO NOTHING;
 
+-- Link Jane Smith to AB12 CDE (family)
 INSERT INTO vehicle_customers (vehicle_id, customer_id, relationship, primary_driver)
-SELECT v.id, c.id, 'primary', true
-FROM vehicles v
-JOIN customers c ON c.name = 'Sarah Jones'
-WHERE v.plate = 'CD45 EFG'
+SELECT (SELECT id FROM vehicles WHERE plate = 'AB12 CDE'), (SELECT id FROM customers WHERE name = 'Jane Smith'), 'family', false
 ON CONFLICT DO NOTHING;
 
+-- Link Tom Johnson to AB12 CDE (shared)
 INSERT INTO vehicle_customers (vehicle_id, customer_id, relationship, primary_driver)
-SELECT v.id, c.id, 'shared', false
-FROM vehicles v
-JOIN customers c ON c.name = 'Tom Johnson'
-WHERE v.plate = 'AB12 CDE'
+SELECT (SELECT id FROM vehicles WHERE plate = 'AB12 CDE'), (SELECT id FROM customers WHERE name = 'Tom Johnson'), 'shared', false
+ON CONFLICT DO NOTHING;
+
+-- Link Sarah Jones to CD45 EFG (primary driver)
+INSERT INTO vehicle_customers (vehicle_id, customer_id, relationship, primary_driver)
+SELECT (SELECT id FROM vehicles WHERE plate = 'CD45 EFG'), (SELECT id FROM customers WHERE name = 'Sarah Jones'), 'primary', true
 ON CONFLICT DO NOTHING;

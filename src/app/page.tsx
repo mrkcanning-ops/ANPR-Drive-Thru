@@ -237,50 +237,66 @@ export default function Home() {
               {/* Vehicle Info Card */}
               {vehicle && (
                 <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded p-3 mb-3">
-                  <div className="flex flex-col gap-3">
-                    {/* UK Registration Plate */}
-                    <div className="flex justify-center mb-2">
-                      <svg width="560" height="80" viewBox="0 0 560 80" xmlns="http://www.w3.org/2000/svg">
-                        <rect x="1" y="1" width="558" height="78" rx="12" ry="12" fill="#F4D03F" />
-                        <rect x="1" y="1" width="558" height="78" rx="12" ry="12" fill="none" stroke="#000000" strokeWidth="2.5" />
-                        <rect x="8" y="8" width="62" height="64" rx="5" ry="5" fill="#003DA5" stroke="#000000" strokeWidth="1.5" />
-                        <circle cx="24" cy="16" r="1.8" fill="#FFD700" />
-                        <circle cx="32" cy="16" r="1.8" fill="#FFD700" />
-                        <circle cx="36" cy="22" r="1.8" fill="#FFD700" />
-                        <circle cx="37" cy="30" r="1.8" fill="#FFD700" />
-                        <circle cx="32" cy="40" r="1.8" fill="#FFD700" />
-                        <circle cx="24" cy="40" r="1.8" fill="#FFD700" />
-                        <circle cx="16" cy="38" r="1.8" fill="#FFD700" />
-                        <circle cx="14" cy="30" r="1.8" fill="#FFD700" />
-                        <circle cx="16" cy="22" r="1.8" fill="#FFD700" />
-                        <circle cx="28" cy="28" r="1.8" fill="#FFD700" />
-                        <circle cx="28" cy="16" r="1.8" fill="#FFD700" />
-                        <circle cx="28" cy="40" r="1.8" fill="#FFD700" />
-                        <text x="28" y="58" fontFamily="Arial, sans-serif" fontSize="13" fontWeight="bold" fill="#FFFFFF" textAnchor="middle">GB</text>
-                        <text x="290" y="56" fontFamily="'Arial Black', Arial, sans-serif" fontSize="68" fontWeight="900" fill="#000000" textAnchor="middle" letterSpacing="2">{vehicle.plate}</text>
-                      </svg>
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Left Column - Registration Plate & Details */}
+                    <div className="flex flex-col gap-3">
+                      {/* UK Registration Plate */}
+                      <div className="flex justify-center">
+                        <svg width="560" height="80" viewBox="0 0 560 80" xmlns="http://www.w3.org/2000/svg">
+                          <rect x="1" y="1" width="558" height="78" rx="12" ry="12" fill="#F4D03F" />
+                          <rect x="1" y="1" width="558" height="78" rx="12" ry="12" fill="none" stroke="#000000" strokeWidth="2.5" />
+                          <rect x="8" y="8" width="62" height="64" rx="5" ry="5" fill="#003DA5" stroke="#000000" strokeWidth="1.5" />
+                          <circle cx="24" cy="16" r="1.8" fill="#FFD700" />
+                          <circle cx="32" cy="16" r="1.8" fill="#FFD700" />
+                          <circle cx="36" cy="22" r="1.8" fill="#FFD700" />
+                          <circle cx="37" cy="30" r="1.8" fill="#FFD700" />
+                          <circle cx="32" cy="40" r="1.8" fill="#FFD700" />
+                          <circle cx="24" cy="40" r="1.8" fill="#FFD700" />
+                          <circle cx="16" cy="38" r="1.8" fill="#FFD700" />
+                          <circle cx="14" cy="30" r="1.8" fill="#FFD700" />
+                          <circle cx="16" cy="22" r="1.8" fill="#FFD700" />
+                          <circle cx="28" cy="28" r="1.8" fill="#FFD700" />
+                          <circle cx="28" cy="16" r="1.8" fill="#FFD700" />
+                          <circle cx="28" cy="40" r="1.8" fill="#FFD700" />
+                          <text x="28" y="58" fontFamily="Arial, sans-serif" fontSize="13" fontWeight="bold" fill="#FFFFFF" textAnchor="middle">GB</text>
+                          <text x="290" y="56" fontFamily="'Arial Black', Arial, sans-serif" fontSize="68" fontWeight="900" fill="#000000" textAnchor="middle" letterSpacing="2">{vehicle.plate}</text>
+                        </svg>
+                      </div>
+
+                      {/* Vehicle Details */}
+                      <div className="border-t-2 border-blue-300 pt-2">
+                        <p className="text-sm text-gray-700 font-semibold">{vehicle.make} {vehicle.model}</p>
+                        <p className="text-sm text-gray-600">{vehicle.colour} • {vehicle.year}</p>
+                      </div>
+
+                      {/* Vehicle Specs */}
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="bg-gray-200 rounded border border-gray-400 p-2">
+                          <p className="text-xs text-gray-600 font-semibold mb-1">Make</p>
+                          <p className="text-xs text-gray-700 font-semibold">{vehicle.make}</p>
+                        </div>
+                        <div className="bg-gray-200 rounded border border-gray-400 p-2">
+                          <p className="text-xs text-blue-600 font-semibold mb-1">Colour</p>
+                          <p className="text-xs text-gray-700 font-semibold">{vehicle.colour}</p>
+                        </div>
+                        <div className="bg-gray-200 rounded border border-gray-400 p-2">
+                          <p className="text-xs text-gray-600 font-semibold mb-1">Year</p>
+                          <p className="text-xs text-gray-700 font-semibold">{vehicle.year}</p>
+                        </div>
+                      </div>
                     </div>
 
-                    {/* Vehicle Details */}
-                    <div className="border-t-2 border-blue-300 pt-2">
-                      <p className="text-sm text-gray-700 font-semibold">{vehicle.make} {vehicle.model}</p>
-                      <p className="text-sm text-gray-600">{vehicle.colour} • {vehicle.year}</p>
-                    </div>
-
-                    {/* Vehicle Specs */}
-                    <div className="grid grid-cols-3 gap-2 pt-2">
-                      <div className="bg-gray-200 rounded border border-gray-400 p-2">
-                        <p className="text-xs text-gray-600 font-semibold mb-1">Make</p>
-                        <p className="text-xs text-gray-700 font-semibold">{vehicle.make}</p>
+                    {/* Right Column - Camera Snapshot */}
+                    <div className="flex flex-col">
+                      <p className="text-xs font-bold text-gray-700 mb-2">📸 Drive-Through Snapshot</p>
+                      <div className="bg-gray-900 rounded border-2 border-gray-700 flex-1 flex items-center justify-center min-h-32 overflow-hidden">
+                        <div className="text-center">
+                          <p className="text-4xl mb-2">🚗</p>
+                          <p className="text-gray-400 text-xs">Vehicle Camera Feed</p>
+                          <p className="text-gray-500 text-xs mt-1">ANPR Snapshot</p>
+                        </div>
                       </div>
-                      <div className="bg-gray-200 rounded border border-gray-400 p-2">
-                        <p className="text-xs text-blue-600 font-semibold mb-1">Colour</p>
-                        <p className="text-xs text-gray-700 font-semibold">{vehicle.colour}</p>
-                      </div>
-                      <div className="bg-gray-200 rounded border border-gray-400 p-2">
-                        <p className="text-xs text-gray-600 font-semibold mb-1">Year</p>
-                        <p className="text-xs text-gray-700 font-semibold">{vehicle.year}</p>
-                      </div>
+                      <p className="text-xs text-gray-500 mt-1 text-center">Plate Confidence: 98.7%</p>
                     </div>
                   </div>
                 </div>
