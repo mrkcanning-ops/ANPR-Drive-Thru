@@ -1,22 +1,103 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# CoffeeHub Drive-Through Dashboard
 
-## Getting Started
+A modern, real-time dashboard for managing drive-through coffee shop operations. Built with Next.js, React, and Supabase.
 
-First, run the development server:
+## Features
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+✨ **Real-Time Dashboard**
+- Live order tracking with WebSocket updates
+- Active orders display with status management
+- Revenue tracking and analytics
+- Service station status monitoring
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+📊 **Analytics & Reports**
+- Daily order volume trends
+- Revenue analytics by category
+- Peak hour analysis
+- Customer satisfaction metrics
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+☕ **Menu Management**
+- Menu item creation and editing
+- Category-based organization
+- Price management
+- Availability toggling
+
+👥 **Team Management**
+- Staff profile management
+- Shift scheduling and assignment
+- Status tracking (active/break/inactive)
+- Role-based access
+
+📋 **Order Management**
+- Order creation and tracking
+- Status workflow (pending → preparing → ready → completed)
+- Customer information tracking
+- Order history and analytics
+
+⚙️ **Settings**
+- Shop configuration
+- Business hours setup
+- Regional settings
+- Currency and timezone support
+
+## Technology Stack
+
+- **Frontend**: [Next.js 16](https://nextjs.org/) + [React 19](https://react.dev/)
+- **Styling**: [Tailwind CSS v4](https://tailwindcss.com/)
+- **Database**: [Supabase](https://supabase.com/) (PostgreSQL)
+- **Real-time**: Supabase Realtime (WebSockets)
+- **Deployment**: [Vercel](https://vercel.com/)
+- **Language**: [TypeScript](https://www.typescriptlang.org/)
+
+## Quick Start
+
+### Prerequisites
+- Node.js 18+ and npm
+- Git
+- Supabase account
+- GitHub account (for Vercel deployment)
+
+### Local Development
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/YOUR_USERNAME/anpr-dashboard.git
+   cd anpr-dashboard
+   ```
+
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
+
+3. **Set up environment variables**
+   ```bash
+   cp .env.local.example .env.local
+   ```
+   Edit `.env.local` with your Supabase credentials:
+   ```
+   NEXT_PUBLIC_SUPABASE_URL=your_project_url
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
+   ```
+
+4. **Set up Supabase**
+   Follow [SUPABASE_SETUP.md](./SUPABASE_SETUP.md) to create your database tables and policies.
+
+5. **Start the development server**
+   ```bash
+   npm run dev
+   ```
+   Open [http://localhost:3000](http://localhost:3000)
+
+### Production Deployment
+
+Follow [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) to deploy to Vercel:
+- Push to GitHub
+- Connect GitHub repo to Vercel
+- Add environment variables
+- Deploy
+
+See [PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md) for detailed file organization and architecture.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
