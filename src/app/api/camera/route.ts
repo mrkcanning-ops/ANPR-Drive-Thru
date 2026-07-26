@@ -15,32 +15,48 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Construct the camera stream URL
-    const cameraUrl = `http://${username}:${password}@${cameraIp}:${port}/cgi-bin/mjpeg?channel=${channel}`;
+    // Try multiple Reolink camera snapshot endpoints
+    const endpoints = [
+      `http://${username}:${password}@${cameraIp}:${port}/cgi-bin/vi?cmd=GetPicture&channel=${channel}`,
+      `http://${username}:${password}@${cameraIp}:${port}/snapshot?channel=${channel}`,
+      `http://${username}:${password}@${cameraIp}:${port}/cgi-bin/snapshot.cgi?channel=${channel}`,
+    ];
 
-    // Fetch the MJPEG stream from the camera
-    const response = await fetch(cameraUrl, {
-      method: 'GET',
-    });
+    let response;
+    let lastError: Error | null = null;
 
-    if (!response.ok) {
-      return NextResponse.json(
-        { error: `Camera returned status ${response.status}` },
-        { status: response.status }
-      );
+    for (const snapshotUrl of endpoints) {
+      try {
+        response = await fetch(snapshotUrl, {
+          method: 'GET',
+          timeout: 5000,
+        });
+
+        if (response.ok) {
+          // Return the snapshot image with proper headers
+          const buffer = await response.arrayBuffer();
+          return new NextResponse(buffer, {
+            status: 200,
+            headers: {
+              'Content-Type': 'image/jpeg',
+              'Cache-Control': 'no-cache, no-store, must-revalidate',
+              'Pragma': 'no-cache',
+              'Expires': '0',
+              'Access-Control-Allow-Origin': '*',
+            },
+          });
+        }
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        continue;
+      }
     }
 
-    // Return the stream with proper headers
-    return new NextResponse(response.body, {
-      status: 200,
-      headers: {
-        'Content-Type': response.headers.get('content-type') || 'multipart/x-mixed-replace; boundary=--myboundary',
-        'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache',
-        'Expires': '0',
-        'Access-Control-Allow-Origin': '*',
-      },
-    });
+    console.error('Camera connection failed. Last error:', lastError?.message);
+    return NextResponse.json(
+      { error: 'Failed to connect to camera at ' + cameraIp },
+      { status: 500 }
+    );
   } catch (error) {
     console.error('Camera proxy error:', error);
     return NextResponse.json(

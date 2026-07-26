@@ -7,6 +7,7 @@ import { BottomNav } from '@/components/BottomNav';
 
 export default function Home() {
   const [time, setTime] = useState<string>('');
+  const [cameraRefresh, setCameraRefresh] = useState<number>(0);
   const [currentVehicle, setCurrentVehicle] = useState({ plate: 'AB12 CDE', name: 'John Smith', time: '14 sec', status: 'serving', statusLabel: 'Ordering', car: 'Blue Ford Focus', points: 240 });
   
   // New state for multi-customer vehicle support
@@ -34,6 +35,14 @@ export default function Home() {
     updateTime();
     const interval = setInterval(updateTime, 1000);
     return () => clearInterval(interval);
+  }, []);
+
+  // Refresh camera snapshot every 2 seconds
+  useEffect(() => {
+    const cameraInterval = setInterval(() => {
+      setCameraRefresh(prev => prev + 1);
+    }, 2000);
+    return () => clearInterval(cameraInterval);
   }, []);
 
   useEffect(() => {
@@ -427,7 +436,7 @@ export default function Home() {
                     Live Camera - Lane 1
                   </div>
                   <img 
-                    src="/api/camera"
+                    src={`/api/camera?t=${cameraRefresh}`}
                     alt="Live Camera Feed"
                     className="w-full h-full object-cover"
                     onError={(e) => {
@@ -440,6 +449,7 @@ export default function Home() {
                     <div>
                       <p className="text-gray-400 text-sm">🎥 Camera Unavailable</p>
                       <p className="text-gray-500 text-xs mt-1">{process.env.NEXT_PUBLIC_CAMERA_IP}</p>
+                      <p className="text-gray-600 text-xs mt-2">Check camera connection</p>
                     </div>
                   </div>
                   <div className="absolute bottom-2 right-2 text-gray-400 text-xs">FPS: 20</div>
