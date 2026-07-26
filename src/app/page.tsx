@@ -422,13 +422,25 @@ export default function Home() {
               {/* Live Camera Feed */}
               <div className="bg-gray-900 rounded shadow-sm overflow-hidden border border-gray-700">
                 <div className="aspect-square bg-gray-800 flex items-center justify-center relative max-h-48">
-                  <div className="absolute top-2 left-2 bg-green-600 text-white px-2 py-1 rounded text-xs font-semibold flex items-center gap-1">
+                  <div className="absolute top-2 left-2 bg-green-600 text-white px-2 py-1 rounded text-xs font-semibold flex items-center gap-1 z-10">
                     <span className="w-2 h-2 bg-green-300 rounded-full inline-block"></span>
                     Live Camera - Lane 1
                   </div>
-                  <div className="text-center">
-                    <p className="text-gray-400 text-sm">🎥 Live Feed</p>
-                    <p className="text-gray-500 text-xs mt-1">Reolink Camera</p>
+                  <img 
+                    src="/api/camera"
+                    alt="Live Camera Feed"
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      const img = e.currentTarget;
+                      img.style.display = 'none';
+                      if (img.nextElementSibling) (img.nextElementSibling as HTMLElement).style.display = 'flex';
+                    }}
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center text-center pointer-events-none bg-gray-800" id="camera-fallback">
+                    <div>
+                      <p className="text-gray-400 text-sm">🎥 Camera Unavailable</p>
+                      <p className="text-gray-500 text-xs mt-1">{process.env.NEXT_PUBLIC_CAMERA_IP}</p>
+                    </div>
                   </div>
                   <div className="absolute bottom-2 right-2 text-gray-400 text-xs">FPS: 20</div>
                 </div>
