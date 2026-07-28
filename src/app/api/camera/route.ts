@@ -15,13 +15,16 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // RLC-811A: Use HTTP Basic Authentication header
+    const auth = Buffer.from(`${username}:${password}`).toString('base64');
+    
     // RLC-811A specific endpoints (HTTPS on port 443)
     const protocol = port === '443' ? 'https' : 'http';
     const endpoints = [
-      `${protocol}://${username}:${password}@${cameraIp}:${port}/cgi-bin/api.cgi?cmd=Snap&channel=${channel}`,
-      `${protocol}://${username}:${password}@${cameraIp}:${port}/cgi-bin/vi?cmd=GetPicture&channel=${channel}`,
-      `${protocol}://${username}:${password}@${cameraIp}:${port}/snapshot.jpg`,
-      `${protocol}://${username}:${password}@${cameraIp}:${port}/cgi-bin/snapshot.cgi?channel=${channel}`,
+      `${protocol}://${cameraIp}:${port}/cgi-bin/api.cgi?cmd=Snap&channel=${channel}`,
+      `${protocol}://${cameraIp}:${port}/cgi-bin/vi?cmd=GetPicture&channel=${channel}`,
+      `${protocol}://${cameraIp}:${port}/snapshot.jpg`,
+      `${protocol}://${cameraIp}:${port}/cgi-bin/snapshot.cgi?channel=${channel}`,
     ];
 
     let response;
@@ -31,6 +34,9 @@ export async function GET(request: NextRequest) {
       try {
         response = await fetch(snapshotUrl, {
           method: 'GET',
+          headers: {
+            'Authorization': `Basic ${auth}`,
+          },
         });
 
         if (response.ok) {
@@ -49,7 +55,7 @@ export async function GET(request: NextRequest) {
         }
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
-        console.log(`Endpoint failed: ${snapshotUrl.split('@')[1]} - ${lastError.message}`);
+        console.log(`Endpoint failed: ${snapshotUrl} - ${lastError.message}`);
         continue;
       }
     }
