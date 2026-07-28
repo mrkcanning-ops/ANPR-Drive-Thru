@@ -1,51 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server';
-import https from 'https';
+import { execSync } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 
-// Create HTTPS agent that ignores self-signed certificates
-const httpsAgent = new https.Agent({
-  rejectUnauthorized: false,
-});
-
-// Simple in-memory session store
-let sessionToken = '';
-let lastSessionTime = 0;
-const SESSION_TIMEOUT = 5 * 60 * 1000; // 5 minutes
-
-async function getSessionToken(ip: string, username: string, password: string) {
-  const now = Date.now();
-  
-  // Reuse session if still valid
-  if (sessionToken && (now - lastSessionTime) < SESSION_TIMEOUT) {
-    return sessionToken;
-  }
-
+// Get RTSP snapshot using ffmpeg
+async function getRtspSnapshot(rtspUrl: string): Promise<Buffer | null> {
   try {
-    // Try to login and get session token
-    const loginUrl = `http://${ip}:80/api/auth/login`;
-    const loginResponse = await fetch(loginUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        username,
-        password,
-      }),
-    });
-
-    if (loginResponse.ok) {
-      const data = await loginResponse.json();
-      if (data.token) {
-        sessionToken = data.token;
-        lastSessionTime = now;
-        console.log('Got new session token');
-        return data.token;
-      }
+    // Use OS temp directory
+    const tempDir = os.tmpdir();
+    const tempFile = path.join(tempDir, `snapshot_${Date.now()}.jpg`);
+    
+    // Execute ffmpeg to grab one frame from RTSP stream
+    // -rtsp_transport tcp: Use TCP instead of UDP for more reliable delivery
+    // -i: Input RTSP URL
+    // -vframes 1: Grab only 1 frame
+    // -y: Overwrite output file without asking
+    // -timeout 5000000: 5 second timeout
+    const command = `ffmpeg -rtsp_transport tcp -i "${rtspUrl}" -vframes 1 -y -q:v 2 "${tempFile}" 2>&1`;
+    
+    const output = execSync(command, { 
+      timeout: 10000,
+      stdio: 'pipe'
+    }).toString();
+    
+    if (fs.existsSync(tempFile)) {
+      const buffer = fs.readFileSync(tempFile);
+      // Clean up temp file
+      fs.unlinkSync(tempFile);
+      console.log('Got RTSP snapshot:', buffer.length, 'bytes');
+      return buffer;
     }
   } catch (error) {
-    console.log('Login failed, will try basic auth fallback:', error);
+    console.error('FFmpeg error:', error instanceof Error ? error.message : error);
   }
-
   return null;
 }
 
@@ -63,81 +51,49 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Try to get session token first
-    const token = await getSessionToken(cameraIp, username, password);
-
-    // Try endpoints with token, then with basic auth
-    const endpoints = [
-      // With session token (HTTP port 80)
-      ...(token ? [
-        `http://${cameraIp}:80/cgi-bin/api.cgi?cmd=Snap&channel=${channel}&token=${token}`,
-        `http://${cameraIp}:80/cgi-bin/vi?cmd=GetPicture&channel=${channel}&token=${token}`,
-        `http://${cameraIp}:80/snapshot.jpg?token=${token}`,
-      ] : []),
-      // With basic auth (HTTP port 80)
-      `http://${cameraIp}:80/cgi-bin/api.cgi?cmd=Snap&channel=${channel}`,
-      `http://${cameraIp}:80/cgi-bin/vi?cmd=GetPicture&channel=${channel}`,
-      `http://${cameraIp}:80/snapshot.jpg`,
-      // HTTPS fallback with basic auth (port 443)
-      `https://${cameraIp}:443/cgi-bin/api.cgi?cmd=Snap&channel=${channel}`,
-      `https://${cameraIp}:443/cgi-bin/vi?cmd=GetPicture&channel=${channel}`,
-      `https://${cameraIp}:443/snapshot.jpg`,
-    ];
-
-    const auth = Buffer.from(`${username}:${password}`).toString('base64');
-    let lastError: Error | null = null;
-
-    for (const snapshotUrl of endpoints) {
-      try {
-        const fetchOptions: any = {
-          method: 'GET',
-          headers: {
-            'Authorization': `Basic ${auth}`,
-          },
-        };
-
-        // Use HTTPS agent for HTTPS URLs
-        if (snapshotUrl.startsWith('https')) {
-          fetchOptions.agent = httpsAgent;
-        }
-
-        const response = await fetch(snapshotUrl, fetchOptions);
-
-        if (response.ok) {
-          const buffer = await response.arrayBuffer();
-          
-          // Debug: log first 100 bytes to see if it's JPEG or HTML
-          const firstBytes = new Uint8Array(buffer.slice(0, 100));
-          console.log('Response headers:', response.headers);
-          console.log('First bytes:', Array.from(firstBytes).slice(0, 20).map(b => b.toString(16).padStart(2, '0')).join(' '));
-          console.log('First text:', new TextDecoder().decode(firstBytes).substring(0, 50));
-          
-          return new NextResponse(buffer, {
-            status: 200,
-            headers: {
-              'Content-Type': 'image/jpeg',
-              'Cache-Control': 'no-cache, no-store, must-revalidate',
-              'Pragma': 'no-cache',
-              'Expires': '0',
-              'Access-Control-Allow-Origin': '*',
-            },
-          });
-        }
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-        continue;
-      }
+    // Try RTSP stream first (most reliable for RLC-811A)
+    const channelNum = channel === '0' ? '01' : `0${parseInt(channel) + 1}`;
+    const rtspUrl = `rtsp://${username}:${password}@${cameraIp}:554/h264Preview_${channelNum}_main`;
+    
+    console.log('Attempting RTSP snapshot from:', rtspUrl);
+    let buffer = await getRtspSnapshot(rtspUrl);
+    
+    if (!buffer) {
+      // Fallback: try sub stream if main fails
+      const rtspUrlSub = `rtsp://${username}:${password}@${cameraIp}:554/h264Preview_${channelNum}_sub`;
+      console.log('Main stream failed, trying sub stream:', rtspUrlSub);
+      buffer = await getRtspSnapshot(rtspUrlSub);
     }
 
-    console.error('Camera connection failed. Last error:', lastError?.message);
+    if (buffer && buffer.length > 0) {
+      // Verify it's JPEG (should start with FFD8)
+      const isJpeg = buffer[0] === 0xFF && buffer[1] === 0xD8;
+      if (!isJpeg) {
+        console.warn('Warning: Response does not appear to be JPEG. First bytes:', 
+          Array.from(buffer.slice(0, 4)).map(b => '0x' + b.toString(16)).join(' '));
+      }
+      
+      return new NextResponse(buffer, {
+        status: 200,
+        headers: {
+          'Content-Type': 'image/jpeg',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+          'Access-Control-Allow-Origin': '*',
+        },
+      });
+    }
+
+    console.error('Failed to get snapshot from RTSP streams');
     return NextResponse.json(
-      { error: 'Failed to connect to camera' },
+      { error: 'Failed to get camera snapshot' },
       { status: 500 }
     );
   } catch (error) {
     console.error('Camera proxy error:', error);
     return NextResponse.json(
-      { error: 'Failed to connect to camera' },
+      { error: 'Camera error: ' + (error instanceof Error ? error.message : String(error)) },
       { status: 500 }
     );
   }
