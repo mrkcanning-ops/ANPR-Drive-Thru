@@ -93,8 +93,13 @@ async function getSnapshotWithBasicAuth(ip: string, username: string, password: 
         const contentType = response.headers.get('content-type');
         console.log(`${url} returned ${response.status}, content-type: ${contentType}`);
         
+        // Log first bytes of response to see what we're getting
+        const buffer = await response.arrayBuffer();
+        const firstBytes = new Uint8Array(buffer).slice(0, 200);
+        const text = new TextDecoder('utf-8', { fatal: false }).decode(firstBytes);
+        console.log(`Response content (first 150 chars): ${text.substring(0, 150)}`);
+        
         if (response.ok && contentType?.includes('image/jpeg')) {
-          const buffer = await response.arrayBuffer();
           console.log('Got JPEG snapshot from:', url, buffer.byteLength, 'bytes');
           return Buffer.from(buffer);
         }
