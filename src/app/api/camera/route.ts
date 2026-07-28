@@ -78,42 +78,44 @@ async function getSnapshotWithToken(ip: string, token: string, channel: string):
     const response = await fetch(snapshotUrl, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: JSON.stringify({
+      body: new URLSearchParams({
         cmd: 'Snap',
-        action: 0,
-        param: {
-          channel: parseInt(channel),
-        },
+        channel: channel,
         token: token,
-      }),
+      }).toString(),
       timeout: 8000,
     });
     
-    if (response.ok) {
-      const buffer = await response.arrayBuffer();
-      console.log('Snapshot response size:', buffer.byteLength, 'bytes');
-      
-      // Check if it's JPEG (FFD8) or JSON error
-      const firstBytes = new Uint8Array(buffer).slice(0, 10);
-      const isJson = firstBytes[0] === 0x5B || firstBytes[0] === 0x7B; // [ or {
-      
-      if (isJson) {
-        const text = new TextDecoder().decode(firstBytes);
-        console.log('Received JSON error (not JPEG):', text);
-        return null;
-      }
-      
-      const isJpeg = firstBytes[0] === 0xFF && firstBytes[1] === 0xD8;
-      if (isJpeg) {
-        console.log('Got JPEG snapshot:', buffer.byteLength, 'bytes');
-        return Buffer.from(buffer);
-      } else {
-        console.log('Response is not JPEG or JSON. First bytes:', Array.from(firstBytes).map(b => b.toString(16)).join(' '));
-      }
+    const buffer = await response.arrayBuffer();
+    console.log('Snapshot response size:', buffer.byteLength, 'bytes');
+    
+    if (buffer.byteLength < 200) {
+      // Likely an error message, let's see what it is
+      const text = new TextDecoder().decode(buffer);
+      console.log('Small response content:', text);
+      return null;
+    }
+    
+    // Check if it's JPEG (FFD8) or JSON error
+    const firstBytes = new Uint8Array(buffer).slice(0, 10);
+    const isJson = firstBytes[0] === 0x5B || firstBytes[0] === 0x7B; // [ or {
+    
+    if (isJson) {
+      const text = new TextDecoder().decode(firstBytes);
+      console.log('Received JSON error (not JPEG):', text);
+      return null;
+    }
+    
+    const isJpeg = firstBytes[0] === 0xFF && firstBytes[1] === 0xD8;
+    if (isJpeg) {
+      console.log('✓ Got JPEG snapshot:', buffer.byteLength, 'bytes');
+      return Buffer.from(buffer);
     } else {
-      console.log('Snapshot request returned:', response.status);
+      console.log('Response is not JPEG. First bytes:', Array.from(firstBytes).map(b => b.toString(16)).join(' '));
+      console.log('As text:', new TextDecoder().decode(firstBytes));
+      return null;
     }
   } catch (error) {
     console.log('Snapshot fetch error:', error instanceof Error ? error.message : error);
