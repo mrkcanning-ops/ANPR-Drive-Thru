@@ -6,38 +6,85 @@ const httpsAgent = new https.Agent({
   rejectUnauthorized: false,
 });
 
+// Simple in-memory session store
+let sessionToken = '';
+let lastSessionTime = 0;
+const SESSION_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+
+async function getSessionToken(ip: string, username: string, password: string) {
+  const now = Date.now();
+  
+  // Reuse session if still valid
+  if (sessionToken && (now - lastSessionTime) < SESSION_TIMEOUT) {
+    return sessionToken;
+  }
+
+  try {
+    // Try to login and get session token
+    const loginUrl = `http://${ip}:80/api/auth/login`;
+    const loginResponse = await fetch(loginUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        username,
+        password,
+      }),
+    });
+
+    if (loginResponse.ok) {
+      const data = await loginResponse.json();
+      if (data.token) {
+        sessionToken = data.token;
+        lastSessionTime = now;
+        console.log('Got new session token');
+        return data.token;
+      }
+    }
+  } catch (error) {
+    console.log('Login failed, will try basic auth fallback:', error);
+  }
+
+  return null;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const cameraIp = process.env.NEXT_PUBLIC_CAMERA_IP;
     const username = process.env.NEXT_PUBLIC_CAMERA_USERNAME;
     const password = process.env.NEXT_PUBLIC_CAMERA_PASSWORD;
-    const port = process.env.NEXT_PUBLIC_CAMERA_PORT || '443';
     const channel = process.env.NEXT_PUBLIC_CAMERA_CHANNEL || '0';
 
-    if (!cameraIp) {
+    if (!cameraIp || !username || !password) {
       return NextResponse.json(
         { error: 'Camera not configured' },
         { status: 500 }
       );
     }
 
-    // Create HTTP Basic Authentication header
-    const auth = Buffer.from(`${username}:${password}`).toString('base64');
-    
-    // Try both HTTP and HTTPS endpoints
-    const protocol = port === '443' ? 'https' : 'http';
+    // Try to get session token first
+    const token = await getSessionToken(cameraIp, username, password);
+
+    // Try endpoints with token, then with basic auth
     const endpoints = [
-      // HTTPS endpoints (port 443)
-      `https://${cameraIp}:443/cgi-bin/api.cgi?cmd=Snap&channel=${channel}`,
-      `https://${cameraIp}:443/cgi-bin/vi?cmd=GetPicture&channel=${channel}`,
-      `https://${cameraIp}:443/snapshot.jpg`,
-      // HTTP fallback (port 80)
+      // With session token (HTTP port 80)
+      ...(token ? [
+        `http://${cameraIp}:80/cgi-bin/api.cgi?cmd=Snap&channel=${channel}&token=${token}`,
+        `http://${cameraIp}:80/cgi-bin/vi?cmd=GetPicture&channel=${channel}&token=${token}`,
+        `http://${cameraIp}:80/snapshot.jpg?token=${token}`,
+      ] : []),
+      // With basic auth (HTTP port 80)
       `http://${cameraIp}:80/cgi-bin/api.cgi?cmd=Snap&channel=${channel}`,
       `http://${cameraIp}:80/cgi-bin/vi?cmd=GetPicture&channel=${channel}`,
       `http://${cameraIp}:80/snapshot.jpg`,
+      // HTTPS fallback with basic auth (port 443)
+      `https://${cameraIp}:443/cgi-bin/api.cgi?cmd=Snap&channel=${channel}`,
+      `https://${cameraIp}:443/cgi-bin/vi?cmd=GetPicture&channel=${channel}`,
+      `https://${cameraIp}:443/snapshot.jpg`,
     ];
 
-    let response;
+    const auth = Buffer.from(`${username}:${password}`).toString('base64');
     let lastError: Error | null = null;
 
     for (const snapshotUrl of endpoints) {
@@ -54,7 +101,7 @@ export async function GET(request: NextRequest) {
           fetchOptions.agent = httpsAgent;
         }
 
-        response = await fetch(snapshotUrl, fetchOptions);
+        const response = await fetch(snapshotUrl, fetchOptions);
 
         if (response.ok) {
           const buffer = await response.arrayBuffer();
@@ -71,7 +118,6 @@ export async function GET(request: NextRequest) {
         }
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
-        console.log(`Endpoint failed: ${snapshotUrl.split('//')[1]?.split(':')[0]}${snapshotUrl.split('//')[1]?.split(':')[1] ? ':' + snapshotUrl.split('//')[1].split(':')[1] : ''} - ${lastError.message}`);
         continue;
       }
     }
