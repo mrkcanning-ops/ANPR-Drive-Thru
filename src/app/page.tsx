@@ -45,8 +45,9 @@ export default function Home() {
     const cameraInterval = setInterval(() => {
       setCameraRefresh(prev => {
         const newValue = prev + 1;
-        // Run ANPR processing every 10 frames (1 fps at 100ms = 1 sec processing)
-        if (newValue % 10 === 0 && !anprProcessing) {
+        // Run ANPR processing every 20 frames (0.5 fps at 100ms = 2 sec processing)
+        // This prevents rate limiting on Plate Recognizer API (free tier limit)
+        if (newValue % 20 === 0 && !anprProcessing) {
           processAnpr();
         }
         return newValue;
