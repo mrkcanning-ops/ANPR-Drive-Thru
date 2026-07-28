@@ -29,7 +29,6 @@ export async function GET(request: NextRequest) {
       try {
         response = await fetch(snapshotUrl, {
           method: 'GET',
-          timeout: 5000,
         });
 
         if (response.ok) {
