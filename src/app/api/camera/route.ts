@@ -1,39 +1,74 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { execSync } from 'child_process';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
+import https from 'https';
 
-// Get RTSP snapshot using ffmpeg
-async function getRtspSnapshot(rtspUrl: string): Promise<Buffer | null> {
+// Simple in-memory session store for auth tokens
+let cachedToken = '';
+let tokenExpiry = 0;
+const TOKEN_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+// Get session token from Reolink camera
+async function getSessionToken(ip: string, username: string, password: string): Promise<string | null> {
   try {
-    // Use OS temp directory
-    const tempDir = os.tmpdir();
-    const tempFile = path.join(tempDir, `snapshot_${Date.now()}.jpg`);
+    const now = Date.now();
     
-    // Execute ffmpeg to grab one frame from RTSP stream
-    // -rtsp_transport tcp: Use TCP instead of UDP for more reliable delivery
-    // -i: Input RTSP URL
-    // -vframes 1: Grab only 1 frame
-    // -y: Overwrite output file without asking
-    // -timeout 5000000: 5 second timeout
-    const command = `ffmpeg -rtsp_transport tcp -i "${rtspUrl}" -vframes 1 -y -q:v 2 "${tempFile}" 2>&1`;
+    // Return cached token if still valid
+    if (cachedToken && now < tokenExpiry) {
+      console.log('Using cached token');
+      return cachedToken;
+    }
     
-    const output = execSync(command, { 
-      timeout: 10000,
-      stdio: 'pipe'
-    }).toString();
+    // Try to get a new token via login
+    const loginUrl = `http://${ip}:80/api/auth/login`;
+    const response = await fetch(loginUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        username,
+        password,
+        clientType: 1,
+      }),
+    });
     
-    if (fs.existsSync(tempFile)) {
-      const buffer = fs.readFileSync(tempFile);
-      // Clean up temp file
-      fs.unlinkSync(tempFile);
-      console.log('Got RTSP snapshot:', buffer.length, 'bytes');
-      return buffer;
+    if (response.ok) {
+      const data = await response.json();
+      if (data.token) {
+        cachedToken = data.token;
+        tokenExpiry = now + TOKEN_CACHE_DURATION;
+        console.log('Got new auth token');
+        return data.token;
+      }
     }
   } catch (error) {
-    console.error('FFmpeg error:', error instanceof Error ? error.message : error);
+    console.log('Failed to get auth token:', error instanceof Error ? error.message : error);
   }
+  
+  return null;
+}
+
+// Get snapshot using Reolink API
+async function getSnapshotWithToken(ip: string, token: string, channel: string): Promise<Buffer | null> {
+  try {
+    const snapshotUrl = `http://${ip}:80/api/snap/shooter?token=${token}&channel=${channel}`;
+    console.log('Fetching snapshot from:', snapshotUrl);
+    
+    const response = await fetch(snapshotUrl, {
+      timeout: 8000,
+    });
+    
+    if (response.ok && response.headers.get('content-type')?.includes('image/jpeg')) {
+      const buffer = await response.arrayBuffer();
+      console.log('Got snapshot via token:', buffer.byteLength, 'bytes');
+      return Buffer.from(buffer);
+    } else {
+      const contentType = response.headers.get('content-type');
+      console.log('Snapshot URL returned:', response.status, contentType);
+    }
+  } catch (error) {
+    console.log('Snapshot fetch error:', error instanceof Error ? error.message : error);
+  }
+  
   return null;
 }
 
@@ -51,45 +86,45 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Try RTSP stream first (most reliable for RLC-811A)
-    const channelNum = channel === '0' ? '01' : `0${parseInt(channel) + 1}`;
-    const rtspUrl = `rtsp://${username}:${password}@${cameraIp}:554/h264Preview_${channelNum}_main`;
+    // Get auth token
+    const token = await getSessionToken(cameraIp, username, password);
     
-    console.log('Attempting RTSP snapshot from:', rtspUrl);
-    let buffer = await getRtspSnapshot(rtspUrl);
+    if (!token) {
+      console.error('Could not get auth token');
+      return NextResponse.json(
+        { error: 'Authentication failed' },
+        { status: 401 }
+      );
+    }
+
+    // Get snapshot with token
+    let buffer = await getSnapshotWithToken(cameraIp, token, channel);
     
     if (!buffer) {
-      // Fallback: try sub stream if main fails
-      const rtspUrlSub = `rtsp://${username}:${password}@${cameraIp}:554/h264Preview_${channelNum}_sub`;
-      console.log('Main stream failed, trying sub stream:', rtspUrlSub);
-      buffer = await getRtspSnapshot(rtspUrlSub);
+      console.error('Failed to get snapshot from camera');
+      return NextResponse.json(
+        { error: 'Failed to get camera snapshot' },
+        { status: 500 }
+      );
     }
 
-    if (buffer && buffer.length > 0) {
-      // Verify it's JPEG (should start with FFD8)
-      const isJpeg = buffer[0] === 0xFF && buffer[1] === 0xD8;
-      if (!isJpeg) {
-        console.warn('Warning: Response does not appear to be JPEG. First bytes:', 
-          Array.from(buffer.slice(0, 4)).map(b => '0x' + b.toString(16)).join(' '));
-      }
-      
-      return new NextResponse(buffer, {
-        status: 200,
-        headers: {
-          'Content-Type': 'image/jpeg',
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0',
-          'Access-Control-Allow-Origin': '*',
-        },
-      });
+    // Verify it's JPEG (should start with FFD8)
+    const isJpeg = buffer[0] === 0xFF && buffer[1] === 0xD8;
+    if (!isJpeg) {
+      console.warn('Response does not appear to be JPEG. First bytes:', 
+        Array.from(buffer.slice(0, 20)).map(b => b.toString(16).padStart(2, '0')).join(' '));
     }
 
-    console.error('Failed to get snapshot from RTSP streams');
-    return NextResponse.json(
-      { error: 'Failed to get camera snapshot' },
-      { status: 500 }
-    );
+    return new NextResponse(buffer, {
+      status: 200,
+      headers: {
+        'Content-Type': 'image/jpeg',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+        'Access-Control-Allow-Origin': '*',
+      },
+    });
   } catch (error) {
     console.error('Camera proxy error:', error);
     return NextResponse.json(
