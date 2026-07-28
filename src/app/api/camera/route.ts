@@ -71,52 +71,47 @@ async function getSessionToken(ip: string, username: string, password: string): 
 // Get snapshot using token  
 async function getSnapshotWithToken(ip: string, token: string, channel: string): Promise<Buffer | null> {
   try {
-    // Reolink expects token in request with Snap command
-    const snapshotUrl = `http://${ip}:80/cgi-bin/api.cgi`;
     console.log('Fetching snapshot with token');
     
-    const response = await fetch(snapshotUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        cmd: 'Snap',
-        channel: channel,
-        token: token,
-      }).toString(),
-      timeout: 8000,
-    });
+    // Try different snapshot endpoint formats
+    const endpoints = [
+      // Query string token approaches
+      `http://${ip}:80/cgi-bin/api.cgi?cmd=Snap&token=${token}&channel=${channel}`,
+      `http://${ip}:80/cgi-bin/api.cgi?cmd=Snap&channel=${channel}&token=${encodeURIComponent(token)}`,
+      // Form-encoded with token in query
+      `http://${ip}:80/cgi-bin/api.cgi?token=${token}`,
+      // Direct snapshot endpoints with token
+      `http://${ip}:80/snapshot.jpg?token=${token}`,
+      `http://${ip}:80/live/image?token=${token}`,
+      `http://${ip}:80/cgi-bin/snapshot.cgi?token=${token}&channel=${channel}`,
+    ];
     
-    const buffer = await response.arrayBuffer();
-    console.log('Snapshot response size:', buffer.byteLength, 'bytes');
-    
-    if (buffer.byteLength < 200) {
-      // Likely an error message, let's see what it is
-      const text = new TextDecoder().decode(buffer);
-      console.log('Small response content:', text);
-      return null;
+    for (const url of endpoints) {
+      try {
+        console.log('Trying snapshot endpoint:', url.substring(0, 60) + '...');
+        
+        // Method 1: Try with token in URL as GET
+        let response = await fetch(url, {
+          method: 'GET',
+          timeout: 5000,
+        });
+        
+        let buffer = await response.arrayBuffer();
+        console.log(`  → ${url.substring(url.lastIndexOf('/') + 1, url.lastIndexOf('/') + 15)} returned ${buffer.byteLength} bytes`);
+        
+        if (buffer.byteLength > 500) {
+          const firstBytes = new Uint8Array(buffer).slice(0, 2);
+          if (firstBytes[0] === 0xFF && firstBytes[1] === 0xD8) {
+            console.log('✓ Got JPEG from:', url);
+            return Buffer.from(buffer);
+          }
+        }
+      } catch (e) {
+        console.log('  Endpoint error:', e instanceof Error ? e.message.substring(0, 30) : 'unknown');
+      }
     }
     
-    // Check if it's JPEG (FFD8) or JSON error
-    const firstBytes = new Uint8Array(buffer).slice(0, 10);
-    const isJson = firstBytes[0] === 0x5B || firstBytes[0] === 0x7B; // [ or {
-    
-    if (isJson) {
-      const text = new TextDecoder().decode(firstBytes);
-      console.log('Received JSON error (not JPEG):', text);
-      return null;
-    }
-    
-    const isJpeg = firstBytes[0] === 0xFF && firstBytes[1] === 0xD8;
-    if (isJpeg) {
-      console.log('✓ Got JPEG snapshot:', buffer.byteLength, 'bytes');
-      return Buffer.from(buffer);
-    } else {
-      console.log('Response is not JPEG. First bytes:', Array.from(firstBytes).map(b => b.toString(16)).join(' '));
-      console.log('As text:', new TextDecoder().decode(firstBytes));
-      return null;
-    }
+    console.log('No valid snapshot endpoint found');
   } catch (error) {
     console.log('Snapshot fetch error:', error instanceof Error ? error.message : error);
   }
