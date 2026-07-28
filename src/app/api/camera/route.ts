@@ -105,6 +105,13 @@ export async function GET(request: NextRequest) {
 
         if (response.ok) {
           const buffer = await response.arrayBuffer();
+          
+          // Debug: log first 100 bytes to see if it's JPEG or HTML
+          const firstBytes = new Uint8Array(buffer.slice(0, 100));
+          console.log('Response headers:', response.headers);
+          console.log('First bytes:', Array.from(firstBytes).slice(0, 20).map(b => b.toString(16).padStart(2, '0')).join(' '));
+          console.log('First text:', new TextDecoder().decode(firstBytes).substring(0, 50));
+          
           return new NextResponse(buffer, {
             status: 200,
             headers: {
