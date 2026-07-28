@@ -81,37 +81,42 @@ async function getSnapshotFromFLV(ip: string, token: string): Promise<Buffer | n
     // Full path to FFmpeg
     const ffmpegPath = 'C:\\Users\\user\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.2-full_build\\bin\\ffmpeg.exe';
     
-    // FFmpeg: capture single frame from FLV stream with timeout and error info
-    // -hide_banner to reduce output, -loglevel info to see connection attempts
-    const command = `"${ffmpegPath}" -rtsp_transport http -timeout 5000000 -i "${flvUrl}" -vframes 1 -y "${tempFile}"`;
+    // FFmpeg: capture single frame from FLV stream
+    // Remove -rtsp_transport for HTTP FLV streams
+    // Add -protocol_whitelist to allow HTTP, and -loglevel verbose for debugging
+    const command = `"${ffmpegPath}" -protocol_whitelist file,http,tcp,https -timeout 5000000 -rtsp_transport tcp -i "${flvUrl}" -vframes 1 -y "${tempFile}"`;
     
     console.log('Running FFmpeg...');
+    let completed = false;
     try {
       const { stdout, stderr } = await execAsync(command, { timeout: 10000, maxBuffer: 50 * 1024 * 1024 });
       const fullOutput = (stdout + stderr);
+      completed = true;
       console.log('FFmpeg completed. Output length:', fullOutput.length);
-      if (fullOutput.length > 0) {
-        // Find useful error messages
-        const lines = fullOutput.split('\\n');
-        for (const line of lines) {
-          if (line.includes('error') || line.includes('Error') || line.includes('Connection') || line.includes('timeout')) {
-            console.log('FFmpeg:', line.substring(0, 150));
-          }
-        }
+      // Parse output for status
+      if (fullOutput.includes('frame=')) {
+        console.log('Frame extracted');
       }
     } catch (execError) {
       const error = execError as any;
       const stderr = error.stderr || '';
       const stdout = error.stdout || '';
+      const allOutput = stdout + stderr;
       
-      // Look for useful error info
-      console.log('FFmpeg execution failed');
-      const lines = (stdout + stderr).split('\\r\\n');
-      for (const line of lines) {
-        if (line && !line.includes('WARNING') && line.length > 3) {
-          console.log('FFmpeg output:', line.substring(0, 120));
-          if (line.includes('Invalid') || line.includes('Connection') || line.includes('error') || line.includes('Failed')) {
-            break; // Found the main error
+      console.log('FFmpeg failed. Output length:', allOutput.length);
+      // Look for the actual error
+      if (allOutput.includes('Connection refused')) {
+        console.log('Error: Connection refused');
+      } else if (allOutput.includes('Connection timed out')) {
+        console.log('Error: Connection timed out');
+      } else if (allOutput.includes('not found')) {
+        console.log('Error: Stream not found');
+      } else if (allOutput.includes('Invalid') || allOutput.includes('Unknown')) {
+        const lines = allOutput.split('\r\n');
+        for (const line of lines) {
+          if ((line.includes('Invalid') || line.includes('Unknown') || line.includes('Unable')) && line.length > 5) {
+            console.log('FFmpeg error:', line.substring(0, 100));
+            break;
           }
         }
       }
