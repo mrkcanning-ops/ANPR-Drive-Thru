@@ -74,22 +74,23 @@ async function getSnapshotFromFLV(ip: string, token: string): Promise<Buffer | n
     const flvUrl = `http://${ip}:80/flv?token=${encodeURIComponent(token)}`;
     console.log('FLV URL (first 80 chars):', flvUrl.substring(0, 80));
     
-    // Use temp file for output
-    tempFile = path.join('/tmp', `snapshot_${Date.now()}.jpg`);
+    // Windows temp file
+    tempFile = path.join(process.env.TEMP || 'c:\\temp', `snapshot_${Date.now()}.jpg`);
+    
+    // Full path to FFmpeg (installed via winget)
+    const ffmpegPath = 'C:\\Users\\user\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.2-full_build\\bin\\ffmpeg.exe';
     
     // FFmpeg: capture single frame from FLV stream
-    // Don't use -rtsp_transport for HTTP URLs
-    const command = `ffmpeg -timeout 3000000 -i "${flvUrl}" -vframes 1 -y "${tempFile}"`;
+    const command = `"${ffmpegPath}" -timeout 3000000 -i "${flvUrl}" -vframes 1 -y "${tempFile}"`;
     
     console.log('Running FFmpeg...');
     try {
       const { stdout, stderr } = await execAsync(command, { timeout: 8000, maxBuffer: 10 * 1024 * 1024 });
-      console.log('FFmpeg stderr (first 300 chars):', (stderr || stdout || 'no output').substring(0, 300));
+      console.log('FFmpeg output (first 200 chars):', (stderr || stdout || 'no output').substring(0, 200));
     } catch (execError) {
       const error = execError as any;
-      console.log('FFmpeg stderr:', error.stderr ? error.stderr.substring(0, 300) : 'no stderr');
-      console.log('FFmpeg stdout:', error.stdout ? error.stdout.substring(0, 300) : 'no stdout');
-      console.log('FFmpeg command:', error.cmd || 'unknown');
+      console.log('FFmpeg error - stderr:', error.stderr ? error.stderr.substring(0, 200) : 'no stderr');
+      console.log('FFmpeg error - stdout:', error.stdout ? error.stdout.substring(0, 200) : 'no stdout');
     }
     
     // Check if file was created
