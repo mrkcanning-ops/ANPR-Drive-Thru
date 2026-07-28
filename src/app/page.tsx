@@ -8,6 +8,9 @@ import { BottomNav } from '@/components/BottomNav';
 export default function Home() {
   const [time, setTime] = useState<string>('');
   const [cameraRefresh, setCameraRefresh] = useState<number>(0);
+  const [detectedPlates, setDetectedPlates] = useState<any[]>([]);
+  const [anprProcessing, setAnprProcessing] = useState(false);
+  const [lastAnprTime, setLastAnprTime] = useState(0);
   const [currentVehicle, setCurrentVehicle] = useState({ plate: 'AB12 CDE', name: 'John Smith', time: '14 sec', status: 'serving', statusLabel: 'Ordering', car: 'Blue Ford Focus', points: 240 });
   
   // New state for multi-customer vehicle support
@@ -37,13 +40,20 @@ export default function Home() {
     return () => clearInterval(interval);
   }, []);
 
-  // Refresh camera snapshot every 2 seconds
+  // Refresh camera snapshot every 100ms (10 fps)
   useEffect(() => {
     const cameraInterval = setInterval(() => {
-      setCameraRefresh(prev => prev + 1);
-    }, 2000);
+      setCameraRefresh(prev => {
+        const newValue = prev + 1;
+        // Run ANPR processing every 10 frames (1 fps at 100ms = 1 sec processing)
+        if (newValue % 10 === 0 && !anprProcessing) {
+          processAnpr();
+        }
+        return newValue;
+      });
+    }, 100);
     return () => clearInterval(cameraInterval);
-  }, []);
+  }, [anprProcessing]);
 
   useEffect(() => {
     fetchDashboardData();
@@ -60,6 +70,41 @@ export default function Home() {
       subscription.unsubscribe();
     };
   }, []);
+
+  // ANPR processing function - runs at 1 fps (every 10 frames at 100ms)
+  const processAnpr = async () => {
+    setAnprProcessing(true);
+    try {
+      const response = await fetch('/api/anpr', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          imageUrl: `/api/camera?t=${cameraRefresh}`,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.plates && data.plates.length > 0) {
+          setDetectedPlates(data.plates);
+          // Auto-select the highest confidence plate
+          const topPlate = data.plates.reduce((max: any, plate: any) =>
+            (plate.confidence > max.confidence) ? plate : max
+          );
+          if (topPlate?.plate) {
+            fetchVehicleData(topPlate.plate);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('ANPR processing error:', error);
+    } finally {
+      setAnprProcessing(false);
+      setLastAnprTime(Date.now());
+    }
+  };
 
   const fetchDashboardData = async () => {
     try {
@@ -432,8 +477,8 @@ export default function Home() {
               <div className="bg-gray-900 rounded shadow-sm overflow-hidden border border-gray-700">
                 <div className="aspect-square bg-gray-800 flex items-center justify-center relative max-h-48">
                   <div className="absolute top-2 left-2 bg-green-600 text-white px-2 py-1 rounded text-xs font-semibold flex items-center gap-1 z-10">
-                    <span className="w-2 h-2 bg-green-300 rounded-full inline-block"></span>
-                    Live Camera - Lane 1
+                    <span className="w-2 h-2 bg-green-300 rounded-full inline-block animate-pulse"></span>
+                    Live 10 FPS · ANPR 1 FPS
                   </div>
                   <img 
                     src={`/api/camera?t=${cameraRefresh}`}
@@ -452,9 +497,32 @@ export default function Home() {
                       <p className="text-gray-600 text-xs mt-2">Check camera connection</p>
                     </div>
                   </div>
-                  <div className="absolute bottom-2 right-2 text-gray-400 text-xs">FPS: 20</div>
+                  <div className="absolute bottom-2 right-2 text-gray-400 text-xs">FPS: 10</div>
                 </div>
               </div>
+
+              {/* Detected Plates from ANPR */}
+              {detectedPlates.length > 0 && (
+                <div className="bg-blue-900 rounded shadow-sm p-3 border border-blue-700">
+                  <h3 className="text-xs font-semibold text-white mb-2">🚗 Detected Plates</h3>
+                  <div className="space-y-2">
+                    {detectedPlates.slice(0, 3).map((plate, idx) => (
+                      <div key={idx} className="bg-blue-800 rounded p-2">
+                        <div className="flex items-center justify-between mb-1">
+                          <p className="text-white font-bold text-sm">{plate.plate}</p>
+                          <p className="text-blue-300 text-xs">{Math.round(plate.confidence * 100)}%</p>
+                        </div>
+                        {plate.vehicle?.color && (
+                          <p className="text-blue-200 text-xs">Color: {plate.vehicle.color}</p>
+                        )}
+                        {plate.vehicle?.type && (
+                          <p className="text-blue-200 text-xs">Type: {plate.vehicle.type}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Lane Status */}
               <div className="bg-emerald-600 rounded shadow-sm p-2 text-white">
