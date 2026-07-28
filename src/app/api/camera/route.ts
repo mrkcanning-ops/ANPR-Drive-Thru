@@ -76,21 +76,45 @@ async function getSnapshotFromFLV(ip: string, token: string): Promise<Buffer | n
     
     // Windows temp file
     tempFile = path.join(process.env.TEMP || 'c:\\temp', `snapshot_${Date.now()}.jpg`);
+    console.log('Output file:', tempFile);
     
-    // Full path to FFmpeg (installed via winget)
+    // Full path to FFmpeg
     const ffmpegPath = 'C:\\Users\\user\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.2-full_build\\bin\\ffmpeg.exe';
     
-    // FFmpeg: capture single frame from FLV stream
-    const command = `"${ffmpegPath}" -timeout 3000000 -i "${flvUrl}" -vframes 1 -y "${tempFile}"`;
+    // FFmpeg: capture single frame from FLV stream with timeout and error info
+    // -hide_banner to reduce output, -loglevel info to see connection attempts
+    const command = `"${ffmpegPath}" -rtsp_transport http -timeout 5000000 -i "${flvUrl}" -vframes 1 -y "${tempFile}"`;
     
     console.log('Running FFmpeg...');
     try {
-      const { stdout, stderr } = await execAsync(command, { timeout: 8000, maxBuffer: 10 * 1024 * 1024 });
-      console.log('FFmpeg output (first 200 chars):', (stderr || stdout || 'no output').substring(0, 200));
+      const { stdout, stderr } = await execAsync(command, { timeout: 10000, maxBuffer: 50 * 1024 * 1024 });
+      const fullOutput = (stdout + stderr);
+      console.log('FFmpeg completed. Output length:', fullOutput.length);
+      if (fullOutput.length > 0) {
+        // Find useful error messages
+        const lines = fullOutput.split('\\n');
+        for (const line of lines) {
+          if (line.includes('error') || line.includes('Error') || line.includes('Connection') || line.includes('timeout')) {
+            console.log('FFmpeg:', line.substring(0, 150));
+          }
+        }
+      }
     } catch (execError) {
       const error = execError as any;
-      console.log('FFmpeg error - stderr:', error.stderr ? error.stderr.substring(0, 200) : 'no stderr');
-      console.log('FFmpeg error - stdout:', error.stdout ? error.stdout.substring(0, 200) : 'no stdout');
+      const stderr = error.stderr || '';
+      const stdout = error.stdout || '';
+      
+      // Look for useful error info
+      console.log('FFmpeg execution failed');
+      const lines = (stdout + stderr).split('\\r\\n');
+      for (const line of lines) {
+        if (line && !line.includes('WARNING') && line.length > 3) {
+          console.log('FFmpeg output:', line.substring(0, 120));
+          if (line.includes('Invalid') || line.includes('Connection') || line.includes('error') || line.includes('Failed')) {
+            break; // Found the main error
+          }
+        }
+      }
     }
     
     // Check if file was created
@@ -102,12 +126,12 @@ async function getSnapshotFromFLV(ip: string, token: string): Promise<Buffer | n
         return buffer;
       }
     } catch (statErr) {
-      console.log('Snapshot file not created or empty');
+      // File doesn't exist
     }
     
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);
-    console.log('FLV snapshot outer error:', errMsg.substring(0, 150));
+    console.log('FLV error:', errMsg.substring(0, 100));
   } finally {
     // Clean up temp file
     if (tempFile) {
