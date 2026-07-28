@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import https from 'https';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import fs from 'fs/promises';
+import path from 'path';
+
+const execAsync = promisify(exec);
 
 // Simple in-memory session store for auth tokens
 let cachedToken = '';
@@ -17,7 +22,7 @@ async function getSessionToken(ip: string, username: string, password: string): 
       return cachedToken;
     }
     
-    // For RLC-811A: Try GetAuthorization command which some models support
+    // For RLC-811A: Try GetAuthorization command
     console.log('Attempting GetAuthorization');
     
     const loginUrl = `http://${ip}:80/cgi-bin/api.cgi`;
@@ -37,7 +42,7 @@ async function getSessionToken(ip: string, username: string, password: string): 
     const responseText = await response.text();
     console.log('GetAuthorization response (first 150 chars):', responseText.substring(0, 150));
     
-    // Extract token from JSON response if present
+    // Extract token from JSON response
     const tokenMatch = responseText.match(/"(?:token|sessionID|sid)\s*"?\s*:\s*"([^"]+)"/i);
     if (tokenMatch && tokenMatch[1]) {
       cachedToken = tokenMatch[1];
@@ -59,83 +64,83 @@ async function getSessionToken(ip: string, username: string, password: string): 
   return null;
 }
 
-// Get snapshot using various authentication methods
-async function getSnapshotWithToken(ip: string, token: string, channel: string, username: string, password: string): Promise<Buffer | null> {
+// Get snapshot from FLV stream using FFmpeg
+async function getSnapshotFromFLV(ip: string, token: string): Promise<Buffer | null> {
+  let tempFile: string | null = null;
+  
   try {
-    console.log('Attempting to get snapshot');
+    console.log('Attempting to extract frame from FLV stream');
     
-    // Method 1: Try with token in query string
-    let endpoints = [
-      `http://${ip}:80/cgi-bin/api.cgi?cmd=Snap&channel=${channel}&token=${encodeURIComponent(token)}`,
-      `http://${ip}:80/snapshot.jpg?token=${encodeURIComponent(token)}`,
-    ];
+    const flvUrl = `http://${ip}:80/flv?token=${encodeURIComponent(token)}`;
     
-    // Try with token first
-    for (const url of endpoints) {
-      try {
-        const response = await fetch(url, {
-          method: 'GET',
-          timeout: 5000,
-        });
-        
-        const buffer = await response.arrayBuffer();
-        
-        // Check if it's JPEG
-        if (buffer.byteLength > 1000) {
-          const firstBytes = new Uint8Array(buffer).slice(0, 2);
-          if (firstBytes[0] === 0xFF && firstBytes[1] === 0xD8) {
-            console.log('✓ Got JPEG via token auth:', buffer.byteLength, 'bytes');
-            return Buffer.from(buffer);
-          }
-        }
-      } catch (e) {
-        // Continue to next method
-      }
+    // Use temp file for output
+    tempFile = path.join('/tmp', `snapshot_${Date.now()}.jpg`);
+    
+    // FFmpeg: capture single frame from FLV stream (1 second timeout)
+    const command = `ffmpeg -rtsp_transport tcp -i "${flvUrl}" -vframes 1 -q:v 5 -y "${tempFile}" 2>&1`;
+    
+    console.log('Running FFmpeg to extract frame...');
+    const { stdout, stderr } = await execAsync(command, { timeout: 8000 });
+    
+    // Check if file was created
+    const stats = await fs.stat(tempFile);
+    if (stats.size > 0) {
+      console.log('✓ Got snapshot from FLV stream:', stats.size, 'bytes');
+      const buffer = await fs.readFile(tempFile);
+      return buffer;
+    } else {
+      console.log('FFmpeg created empty file');
+      return null;
     }
     
-    // Method 2: Try with HTTP Basic Auth headers (direct snapshot endpoint)
-    const auth = Buffer.from(`${username}:${password}`).toString('base64');
-    const basicAuthEndpoints = [
-      `http://${ip}:80/cgi-bin/api.cgi?cmd=Snap&channel=${channel}`,
-      `http://${ip}:80/cgi-bin/snapshot.cgi?channel=${channel}`,
-      `http://${ip}:80/snapshot.jpg`,
-      `http://${ip}:80/webcam.jpg`,
-    ];
-    
-    console.log('Trying HTTP Basic Auth');
-    for (const url of basicAuthEndpoints) {
-      try {
-        const response = await fetch(url, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Basic ${auth}`,
-          },
-          timeout: 5000,
-        });
-        
-        const buffer = await response.arrayBuffer();
-        
-        if (buffer.byteLength > 1000) {
-          const firstBytes = new Uint8Array(buffer).slice(0, 2);
-          if (firstBytes[0] === 0xFF && firstBytes[1] === 0xD8) {
-            console.log('✓ Got JPEG via Basic Auth:', buffer.byteLength, 'bytes');
-            return Buffer.from(buffer);
-          }
-        }
-        
-        // Log what we got if it's small
-        if (buffer.byteLength < 300) {
-          const text = new TextDecoder('utf-8', { fatal: false }).decode(buffer);
-          console.log(`${url.substring(url.lastIndexOf('/') + 1, url.lastIndexOf('/') + 20)}: ${buffer.byteLength} bytes, content: ${text.substring(0, 60)}`);
-        }
-      } catch (e) {
-        // Continue
-      }
-    }
-    
-    console.log('No valid JPEG snapshot found');
   } catch (error) {
-    console.log('Snapshot error:', error instanceof Error ? error.message : error);
+    console.log('FLV snapshot error:', error instanceof Error ? error.message.substring(0, 100) : error);
+  } finally {
+    // Clean up temp file
+    if (tempFile) {
+      try {
+        await fs.unlink(tempFile);
+      } catch (e) {
+        // Ignore
+      }
+    }
+  }
+  
+  return null;
+}
+
+// Get snapshot using various methods
+async function getSnapshot(ip: string, token: string, channel: string, username: string, password: string): Promise<Buffer | null> {
+  // Try FFmpeg/FLV first (most reliable for Reolink)
+  let buffer = await getSnapshotFromFLV(ip, token);
+  if (buffer) return buffer;
+  
+  // Fallback: Try HTTP endpoints (in case this model supports them)
+  console.log('FLV approach failed, trying HTTP endpoints');
+  
+  const auth = Buffer.from(`${username}:${password}`).toString('base64');
+  const endpoints = [
+    `http://${ip}:80/cgi-bin/api.cgi?cmd=Snap&channel=${channel}`,
+    `http://${ip}:80/cgi-bin/snapshot.cgi?channel=${channel}`,
+    `http://${ip}:80/snapshot.jpg`,
+  ];
+  
+  for (const url of endpoints) {
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { 'Authorization': `Basic ${auth}` },
+        timeout: 5000,
+      });
+      
+      const buf = await response.arrayBuffer();
+      if (buf.byteLength > 1000 && buf.byteLength[0] === 0xFF && buf.byteLength[1] === 0xD8) {
+        console.log('✓ Got JPEG via HTTP');
+        return Buffer.from(buf);
+      }
+    } catch (e) {
+      // Continue
+    }
   }
   
   return null;
@@ -166,8 +171,8 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get snapshot (tries token-based auth first, then HTTP Basic Auth)
-    const buffer = await getSnapshotWithToken(cameraIp, token, channel, username, password);
+    // Get snapshot (tries FLV/FFmpeg first, then HTTP endpoints)
+    const buffer = await getSnapshot(cameraIp, token, channel, username, password);
     
     if (!buffer) {
       console.error('Failed to get snapshot from camera');
@@ -177,7 +182,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Return as JPEG
+    // Verify it's JPEG
+    const isJpeg = buffer[0] === 0xFF && buffer[1] === 0xD8;
+    if (!isJpeg) {
+      console.warn('Warning: Response may not be valid JPEG');
+    }
+
     return new NextResponse(buffer, {
       status: 200,
       headers: {
