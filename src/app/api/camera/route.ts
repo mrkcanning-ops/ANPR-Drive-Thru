@@ -17,29 +17,47 @@ async function getSessionToken(ip: string, username: string, password: string): 
       return cachedToken;
     }
     
-    // Try to get a new token via login
-    const loginUrl = `http://${ip}:80/api/auth/login`;
-    const response = await fetch(loginUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        username,
-        password,
-        clientType: 1,
-      }),
-    });
+    // Try different login endpoints
+    const loginEndpoints = [
+      `http://${ip}:80/api/auth/login`,
+      `http://${ip}:80/cgi-bin/api.cgi?cmd=GetAuthorization`,
+    ];
     
-    if (response.ok) {
-      const data = await response.json();
-      if (data.token) {
-        cachedToken = data.token;
-        tokenExpiry = now + TOKEN_CACHE_DURATION;
-        console.log('Got new auth token');
-        return data.token;
+    for (const loginUrl of loginEndpoints) {
+      try {
+        console.log('Trying login endpoint:', loginUrl);
+        const response = await fetch(loginUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            username,
+            password,
+            clientType: 1,
+          }),
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          console.log('Login response:', JSON.stringify(data).substring(0, 100));
+          
+          if (data.token) {
+            cachedToken = data.token;
+            tokenExpiry = now + TOKEN_CACHE_DURATION;
+            console.log('Got auth token:', cachedToken.substring(0, 10) + '...');
+            return data.token;
+          }
+        } else {
+          console.log('Login endpoint returned:', response.status);
+        }
+      } catch (e) {
+        console.log('Endpoint error:', e instanceof Error ? e.message : e);
       }
     }
+    
+    console.log('No login endpoint worked, trying simple token');
+    // Fallback: try to use a hardcoded approach or check if camera uses direct token from another source
   } catch (error) {
     console.log('Failed to get auth token:', error instanceof Error ? error.message : error);
   }
@@ -47,26 +65,45 @@ async function getSessionToken(ip: string, username: string, password: string): 
   return null;
 }
 
-// Get snapshot using Reolink API
-async function getSnapshotWithToken(ip: string, token: string, channel: string): Promise<Buffer | null> {
+// Try to get snapshot with HTTP Basic Auth (no token needed)
+async function getSnapshotWithBasicAuth(ip: string, username: string, password: string, channel: string): Promise<Buffer | null> {
   try {
-    const snapshotUrl = `http://${ip}:80/api/snap/shooter?token=${token}&channel=${channel}`;
-    console.log('Fetching snapshot from:', snapshotUrl);
+    const auth = Buffer.from(`${username}:${password}`).toString('base64');
     
-    const response = await fetch(snapshotUrl, {
-      timeout: 8000,
-    });
+    // Try various Reolink snapshot endpoints
+    const endpoints = [
+      `http://${ip}:80/cgi-bin/api.cgi?cmd=Snap&channel=${channel}`,
+      `http://${ip}:80/cgi-bin/vi?cmd=GetPicture&channel=${channel}`,  
+      `http://${ip}:80/webcam.jpg`,
+      `http://${ip}:80/snapshot.jpg`,
+      `http://${ip}:80/cgi-bin/snapshot.cgi?channel=${channel}`,
+    ];
     
-    if (response.ok && response.headers.get('content-type')?.includes('image/jpeg')) {
-      const buffer = await response.arrayBuffer();
-      console.log('Got snapshot via token:', buffer.byteLength, 'bytes');
-      return Buffer.from(buffer);
-    } else {
-      const contentType = response.headers.get('content-type');
-      console.log('Snapshot URL returned:', response.status, contentType);
+    for (const url of endpoints) {
+      try {
+        console.log('Trying snapshot endpoint:', url);
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Basic ${auth}`,
+          },
+          timeout: 5000,
+        });
+        
+        const contentType = response.headers.get('content-type');
+        console.log(`${url} returned ${response.status}, content-type: ${contentType}`);
+        
+        if (response.ok && contentType?.includes('image/jpeg')) {
+          const buffer = await response.arrayBuffer();
+          console.log('Got JPEG snapshot from:', url, buffer.byteLength, 'bytes');
+          return Buffer.from(buffer);
+        }
+      } catch (e) {
+        console.log('Endpoint error:', url, e instanceof Error ? e.message : e);
+      }
     }
   } catch (error) {
-    console.log('Snapshot fetch error:', error instanceof Error ? error.message : error);
+    console.log('Basic auth snapshot error:', error instanceof Error ? error.message : error);
   }
   
   return null;
@@ -86,22 +123,11 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get auth token
-    const token = await getSessionToken(cameraIp, username, password);
-    
-    if (!token) {
-      console.error('Could not get auth token');
-      return NextResponse.json(
-        { error: 'Authentication failed' },
-        { status: 401 }
-      );
-    }
-
-    // Get snapshot with token
-    let buffer = await getSnapshotWithToken(cameraIp, token, channel);
+    // Try to get snapshot with Basic Auth (no token needed)
+    const buffer = await getSnapshotWithBasicAuth(cameraIp, username, password, channel);
     
     if (!buffer) {
-      console.error('Failed to get snapshot from camera');
+      console.error('Failed to get snapshot from any endpoint');
       return NextResponse.json(
         { error: 'Failed to get camera snapshot' },
         { status: 500 }
@@ -113,6 +139,7 @@ export async function GET(request: NextRequest) {
     if (!isJpeg) {
       console.warn('Response does not appear to be JPEG. First bytes:', 
         Array.from(buffer.slice(0, 20)).map(b => b.toString(16).padStart(2, '0')).join(' '));
+      console.warn('First 50 chars:', buffer.toString('utf8', 0, Math.min(50, buffer.length)));
     }
 
     return new NextResponse(buffer, {
