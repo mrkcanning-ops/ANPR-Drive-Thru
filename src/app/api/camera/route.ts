@@ -1,4 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import https from 'https';
+
+// Create HTTPS agent that ignores self-signed certificates
+const httpsAgent = new https.Agent({
+  rejectUnauthorized: false,
+});
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,16 +21,20 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // RLC-811A: Use HTTP Basic Authentication header
+    // Create HTTP Basic Authentication header
     const auth = Buffer.from(`${username}:${password}`).toString('base64');
     
-    // RLC-811A specific endpoints (HTTPS on port 443)
+    // Try both HTTP and HTTPS endpoints
     const protocol = port === '443' ? 'https' : 'http';
     const endpoints = [
-      `${protocol}://${cameraIp}:${port}/cgi-bin/api.cgi?cmd=Snap&channel=${channel}`,
-      `${protocol}://${cameraIp}:${port}/cgi-bin/vi?cmd=GetPicture&channel=${channel}`,
-      `${protocol}://${cameraIp}:${port}/snapshot.jpg`,
-      `${protocol}://${cameraIp}:${port}/cgi-bin/snapshot.cgi?channel=${channel}`,
+      // HTTPS endpoints (port 443)
+      `https://${cameraIp}:443/cgi-bin/api.cgi?cmd=Snap&channel=${channel}`,
+      `https://${cameraIp}:443/cgi-bin/vi?cmd=GetPicture&channel=${channel}`,
+      `https://${cameraIp}:443/snapshot.jpg`,
+      // HTTP fallback (port 80)
+      `http://${cameraIp}:80/cgi-bin/api.cgi?cmd=Snap&channel=${channel}`,
+      `http://${cameraIp}:80/cgi-bin/vi?cmd=GetPicture&channel=${channel}`,
+      `http://${cameraIp}:80/snapshot.jpg`,
     ];
 
     let response;
@@ -32,15 +42,21 @@ export async function GET(request: NextRequest) {
 
     for (const snapshotUrl of endpoints) {
       try {
-        response = await fetch(snapshotUrl, {
+        const fetchOptions: any = {
           method: 'GET',
           headers: {
             'Authorization': `Basic ${auth}`,
           },
-        });
+        };
+
+        // Use HTTPS agent for HTTPS URLs
+        if (snapshotUrl.startsWith('https')) {
+          fetchOptions.agent = httpsAgent;
+        }
+
+        response = await fetch(snapshotUrl, fetchOptions);
 
         if (response.ok) {
-          // Return the snapshot image with proper headers
           const buffer = await response.arrayBuffer();
           return new NextResponse(buffer, {
             status: 200,
@@ -55,14 +71,14 @@ export async function GET(request: NextRequest) {
         }
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
-        console.log(`Endpoint failed: ${snapshotUrl} - ${lastError.message}`);
+        console.log(`Endpoint failed: ${snapshotUrl.split('//')[1]?.split(':')[0]}${snapshotUrl.split('//')[1]?.split(':')[1] ? ':' + snapshotUrl.split('//')[1].split(':')[1] : ''} - ${lastError.message}`);
         continue;
       }
     }
 
-    console.error('Camera connection failed. Tried all endpoints. Last error:', lastError?.message);
+    console.error('Camera connection failed. Last error:', lastError?.message);
     return NextResponse.json(
-      { error: 'Failed to connect to camera at ' + cameraIp },
+      { error: 'Failed to connect to camera' },
       { status: 500 }
     );
   } catch (error) {
