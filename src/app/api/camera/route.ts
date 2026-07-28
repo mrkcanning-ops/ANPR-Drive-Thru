@@ -72,19 +72,25 @@ async function getSnapshotFromFLV(ip: string, token: string): Promise<Buffer | n
     console.log('Attempting to extract frame from FLV stream');
     
     const flvUrl = `http://${ip}:80/flv?token=${encodeURIComponent(token)}`;
-    console.log('FLV URL:', flvUrl.substring(0, 60) + '...');
+    console.log('FLV URL (first 80 chars):', flvUrl.substring(0, 80));
     
     // Use temp file for output
     tempFile = path.join('/tmp', `snapshot_${Date.now()}.jpg`);
     
-    // FFmpeg: capture single frame from FLV stream with HTTP protocol
-    // Use -rtsp_transport tcp for HTTP streams, shorter timeout, and image output
-    const command = `ffmpeg -timeout 3000000 -i "${flvUrl}" -vframes 1 -y "${tempFile}" 2>&1`;
+    // FFmpeg: capture single frame from FLV stream
+    // Don't use -rtsp_transport for HTTP URLs
+    const command = `ffmpeg -timeout 3000000 -i "${flvUrl}" -vframes 1 -y "${tempFile}"`;
     
-    console.log('Running FFmpeg command');
-    const { stdout, stderr } = await execAsync(command, { timeout: 8000 });
-    
-    console.log('FFmpeg output:', (stdout + stderr).substring(0, 200));
+    console.log('Running FFmpeg...');
+    try {
+      const { stdout, stderr } = await execAsync(command, { timeout: 8000, maxBuffer: 10 * 1024 * 1024 });
+      console.log('FFmpeg stderr (first 300 chars):', (stderr || stdout || 'no output').substring(0, 300));
+    } catch (execError) {
+      const error = execError as any;
+      console.log('FFmpeg stderr:', error.stderr ? error.stderr.substring(0, 300) : 'no stderr');
+      console.log('FFmpeg stdout:', error.stdout ? error.stdout.substring(0, 300) : 'no stdout');
+      console.log('FFmpeg command:', error.cmd || 'unknown');
+    }
     
     // Check if file was created
     try {
@@ -93,16 +99,14 @@ async function getSnapshotFromFLV(ip: string, token: string): Promise<Buffer | n
         console.log('✓ Got snapshot from FLV stream:', stats.size, 'bytes');
         const buffer = await fs.readFile(tempFile);
         return buffer;
-      } else {
-        console.log('FFmpeg created empty file');
       }
     } catch (statErr) {
-      console.log('Snapshot file not created');
+      console.log('Snapshot file not created or empty');
     }
     
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);
-    console.log('FLV snapshot error:', errMsg.substring(0, 150));
+    console.log('FLV snapshot outer error:', errMsg.substring(0, 150));
   } finally {
     // Clean up temp file
     if (tempFile) {
