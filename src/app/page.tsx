@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { supabase, Order, DailyStats, Vehicle, Customer, VehicleCustomer } from '@/lib/supabase';
 import { Sidebar } from '@/components/Sidebar';
 import { BottomNav } from '@/components/BottomNav';
+import { WebRTCVideo } from '@/app/components/WebRTCVideo';
 
 export default function Home() {
   const [time, setTime] = useState<string>('');
@@ -113,7 +114,7 @@ export default function Home() {
       const { data: activeOrders, error: ordersError } = await supabase
         .from('orders')
         .select('*')
-        .in('status', ['pending', 'preparing', 'ready'])
+        .in('status', ['pending', 'ready'])
         .order('created_at', { ascending: false })
         .limit(4);
 
@@ -327,16 +328,31 @@ export default function Home() {
                       </div>
                     </div>
 
-                    {/* Right Column - Camera Snapshot */}
-                    <div className="flex flex-col">
-                      <div className="bg-gray-900 rounded border-2 border-gray-700 flex-1 flex items-center justify-center min-h-32 overflow-hidden">
-                        <div className="text-center">
-                          <p className="text-4xl mb-2">🚗</p>
-                          <p className="text-gray-400 text-xs">Vehicle Camera Feed</p>
-                          <p className="text-gray-500 text-xs mt-1">ANPR Snapshot</p>
-                        </div>
+                    {/* Right Column - Stored Vehicle Snapshot Image */}
+                    <div className="flex flex-col gap-2">
+                      <div className="bg-gray-200 rounded border-2 border-gray-400 flex-1 min-h-32 overflow-hidden flex items-center justify-center">
+                        {vehicle.image_url ? (
+                          <img 
+                            src={vehicle.image_url} 
+                            alt="Vehicle Snapshot"
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="text-center p-4">
+                            <p className="text-gray-600 text-sm font-semibold mb-3">📷 No Image Stored</p>
+                            <button
+                              onClick={() => {
+                                // TODO: Capture snapshot from live feed and save to database
+                                console.log('Capture snapshot for vehicle:', vehicle.id);
+                              }}
+                              className="bg-blue-600 text-white px-3 py-2 rounded text-xs font-semibold hover:bg-blue-700"
+                            >
+                              📸 Capture & Save
+                            </button>
+                          </div>
+                        )}
                       </div>
-                      <p className="text-xs text-gray-500 mt-1 text-center">Plate Confidence: 98.7%</p>
+                      <p className="text-xs text-gray-500 text-center">Stored Reference</p>
                     </div>
                   </div>
                 </div>
@@ -473,32 +489,16 @@ export default function Home() {
             </div>
 
             {/* Right Sidebar - Camera & Status */}
-            <div className="lg:col-span-2 space-y-2 overflow-y-auto">
+            <div className="lg:col-span-2 space-y-2 overflow-y-auto flex flex-col">
               {/* Live Camera Feed */}
-              <div className="bg-gray-900 rounded shadow-sm overflow-hidden border border-gray-700">
-                <div className="aspect-square bg-gray-800 flex items-center justify-center relative max-h-48">
+              <div className="bg-gray-900 rounded shadow-sm overflow-hidden border border-gray-700 flex-1">
+                <div className="w-full h-full bg-gray-800 flex items-center justify-center relative">
                   <div className="absolute top-2 left-2 bg-green-600 text-white px-2 py-1 rounded text-xs font-semibold flex items-center gap-1 z-10">
                     <span className="w-2 h-2 bg-green-300 rounded-full inline-block animate-pulse"></span>
-                    Live 10 FPS · ANPR 1 FPS
+                    Live WebRTC · ANPR 0.5 FPS
                   </div>
-                  <img 
-                    src={`/api/camera?t=${cameraRefresh}`}
-                    alt="Live Camera Feed"
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      const img = e.currentTarget;
-                      img.style.display = 'none';
-                      if (img.nextElementSibling) (img.nextElementSibling as HTMLElement).style.display = 'flex';
-                    }}
-                  />
-                  <div className="absolute inset-0 flex items-center justify-center text-center pointer-events-none bg-gray-800" id="camera-fallback">
-                    <div>
-                      <p className="text-gray-400 text-sm">🎥 Camera Unavailable</p>
-                      <p className="text-gray-500 text-xs mt-1">{process.env.NEXT_PUBLIC_CAMERA_IP}</p>
-                      <p className="text-gray-600 text-xs mt-2">Check camera connection</p>
-                    </div>
-                  </div>
-                  <div className="absolute bottom-2 right-2 text-gray-400 text-xs">FPS: 10</div>
+                  <WebRTCVideo />
+                  <div className="absolute bottom-2 right-2 text-gray-400 text-xs bg-gray-900 px-2 py-1 rounded">WebRTC</div>
                 </div>
               </div>
 
