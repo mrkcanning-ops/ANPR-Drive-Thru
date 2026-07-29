@@ -39,6 +39,7 @@ export interface Vehicle {
   model: string;
   colour: string;
   year?: number;
+  image_url?: string;
   created_at: string;
   updated_at: string;
 }
