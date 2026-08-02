@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 export function WebRTCVideo() {
   const [isMobile, setIsMobile] = useState(false);
   const [started, setStarted] = useState(false);
-  const GO2RTC_URL = process.env.NEXT_PUBLIC_GO2RTC_URL || 'http://192.168.1.50:1984';
+  const GO2RTC_URL = process.env.NEXT_PUBLIC_GO2RTC_URL || 'http://192.168.0.52:1984';
 
   useEffect(() => {
     const mobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
