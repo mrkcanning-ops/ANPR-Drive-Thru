@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 export function WebRTCVideo() {
   const [isMobile, setIsMobile] = useState(false);
   const [started, setStarted] = useState(false);
+  const GO2RTC_URL = process.env.NEXT_PUBLIC_GO2RTC_URL || 'http://192.168.0.52:1984';
 
   useEffect(() => {
     const mobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
@@ -36,7 +37,7 @@ export function WebRTCVideo() {
         </button>
       ) : (
         <iframe
-          src="http://localhost:1984/stream.html?src=reolink"
+          src={`${GO2RTC_URL}/stream.html?src=reolink`}
           title="Live Camera Feed"
           style={{
             width: '100%',
