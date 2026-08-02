@@ -24,7 +24,7 @@ export function WebRTCVideo() {
         </button>
       ) : (
         <iframe
-          src={`${GO2RTC_URL}/stream.html?src=reolink`}
+          src={`${GO2RTC_URL}/stream.html?src=reolink&mode=webrtc`}
           title="Live Camera Feed"
           className="w-full h-full border-0 block bg-black"
           style={{
