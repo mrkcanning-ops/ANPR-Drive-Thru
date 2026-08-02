@@ -5,8 +5,7 @@ import { useEffect, useState } from 'react';
 export function WebRTCVideo() {
   const [isMobile, setIsMobile] = useState(false);
   const [started, setStarted] = useState(false);
-  const [streamUrl, setStreamUrl] = useState<string>('/api/stream-proxy');
-  const [streamError, setStreamError] = useState<string | null>(null);
+  const GO2RTC_URL = process.env.NEXT_PUBLIC_GO2RTC_URL || 'http://192.168.1.50:1984';
 
   useEffect(() => {
     const mobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
@@ -14,72 +13,25 @@ export function WebRTCVideo() {
     setStarted(!mobile);
   }, []);
 
-  const handleIframeError = () => {
-    setStreamError('Camera stream unavailable. If accessing remotely, go2rtc must be publicly accessible. Use ngrok or set up a tunnel.');
-  };
-
-  const handleIframeLoad = () => {
-    setStreamError(null);
-  };
-
   return (
-    <div style={{
-      width: '100%',
-      height: '100%',
-      overflow: 'hidden',
-      backgroundColor: '#000',
-      position: 'relative',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center'
-    }}>
+    <div className="w-full h-full relative bg-black overflow-hidden">
       {!started && isMobile ? (
         <button
           onClick={() => setStarted(true)}
-          style={{
-            width: '100%',
-            height: '100%',
-            color: '#fff',
-            background: '#111',
-            border: 'none',
-            fontSize: '16px',
-            cursor: 'pointer',
-            fontWeight: 'bold'
-          }}
+          className="w-full h-full bg-gray-900 text-white flex items-center justify-center text-sm font-medium"
         >
           Tap to start live feed
         </button>
-      ) : streamError ? (
-        <div style={{
-          padding: '20px',
-          color: '#fff',
-          textAlign: 'center',
-          fontSize: '14px',
-          maxWidth: '80%'
-        }}>
-          <div style={{ marginBottom: '10px', fontSize: '24px' }}>📷</div>
-          <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>Camera Unavailable</div>
-          <div>{streamError}</div>
-          <div style={{ marginTop: '12px', fontSize: '12px', color: '#999' }}>
-            For remote access: Set NEXT_PUBLIC_GO2RTC_URL environment variable in Vercel
-          </div>
-        </div>
       ) : (
         <iframe
-          key={started ? 'streaming' : 'idle'}
-          src={streamUrl}
+          src={`${GO2RTC_URL}/stream.html?src=reolink`}
           title="Live Camera Feed"
+          className="w-full h-full border-0 block bg-black"
           style={{
-            width: '100%',
-            height: '100%',
-            border: 'none',
-            display: 'block',
-            backgroundColor: '#000'
+            transform: 'scale(1.18)',
+            transformOrigin: 'center',
           }}
-          allow="autoplay; fullscreen; camera; microphone"
-          sandbox="allow-forms allow-modals allow-pointer-lock allow-presentation allow-same-origin allow-scripts allow-top-navigation-by-user-activation"
-          onError={handleIframeError}
-          onLoad={handleIframeLoad}
+          allow="autoplay *; fullscreen *; camera *; microphone *"
         />
       )}
     </div>

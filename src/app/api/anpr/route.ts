@@ -16,7 +16,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Image URL required' }, { status: 400 });
     }
 
-    const imageResponse = await fetch(imageUrl);
+    // Convert relative URL to absolute URL for server-side fetch
+    const absoluteUrl = imageUrl.startsWith('http') 
+      ? imageUrl 
+      : `${request.headers.get('x-forwarded-proto') || 'http'}://${request.headers.get('host')}${imageUrl}`;
+    
+    console.log('[ANPR] Fetching from absolute URL:', absoluteUrl);
+    const imageResponse = await fetch(absoluteUrl);
     console.log('[ANPR] snapshot status:', imageResponse.status, imageResponse.headers.get('content-type'));
 
     if (!imageResponse.ok) {

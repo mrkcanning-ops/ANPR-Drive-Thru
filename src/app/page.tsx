@@ -5,28 +5,14 @@ import { supabase, Order, DailyStats, Vehicle, Customer, VehicleCustomer } from 
 import { Sidebar } from '@/components/Sidebar';
 import { BottomNav } from '@/components/BottomNav';
 import { WebRTCVideo } from '@/app/components/WebRTCVideo';
-import { useAnprPolling } from '@/lib/useAnprPolling';
-import { VehicleInfoCard } from '@/components/VehicleInfoCard';
-
-interface RecentArrival {
-  plate: string;
-  detectedAt: number;
-  name: string;
-  car: string;
-  points: number;
-  status: 'serving' | 'completed' | 'left';
-}
 
 export default function Home() {
   const [time, setTime] = useState<string>('');
-      const { detectedPlates, anprProcessing, anprError } = useAnprPolling({
-    onPlateDetected: (plate) => {
-      recordArrival(plate);
-      fetchVehicleData(plate);
-    },
-  });
-    const [currentVehicle, setCurrentVehicle] = useState({ plate: 'AB12 CDE', name: 'John Smith', time: '14 sec', status: 'serving', statusLabel: 'Ordering', car: 'Blue Ford Focus', points: 240 });
-  const [recentArrivals, setRecentArrivals] = useState<RecentArrival[]>([]);
+  const [cameraRefresh, setCameraRefresh] = useState<number>(0);
+  const [detectedPlates, setDetectedPlates] = useState<any[]>([]);
+  const [anprProcessing, setAnprProcessing] = useState(false);
+  const [lastAnprTime, setLastAnprTime] = useState(0);
+  const [currentVehicle, setCurrentVehicle] = useState({ plate: 'AB12 CDE', name: 'John Smith', time: '14 sec', status: 'serving', statusLabel: 'Ordering', car: 'Blue Ford Focus', points: 240 });
   
   // New state for multi-customer vehicle support
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
@@ -55,7 +41,21 @@ export default function Home() {
     return () => clearInterval(interval);
   }, []);
 
-  
+  // Refresh camera snapshot every 100ms (10 fps)
+  useEffect(() => {
+    const cameraInterval = setInterval(() => {
+      setCameraRefresh(prev => {
+        const newValue = prev + 1;
+        // Run ANPR processing every 20 frames (0.5 fps at 100ms = 2 sec processing)
+        // This prevents rate limiting on Plate Recognizer API (free tier limit)
+        if (newValue % 20 === 0 && !anprProcessing) {
+          processAnpr();
+        }
+        return newValue;
+      });
+    }, 100);
+    return () => clearInterval(cameraInterval);
+  }, [anprProcessing]);
 
   useEffect(() => {
     fetchDashboardData();
@@ -73,7 +73,40 @@ export default function Home() {
     };
   }, []);
 
+  // ANPR processing function - runs at 1 fps (every 10 frames at 100ms)
+  const processAnpr = async () => {
+    setAnprProcessing(true);
+    try {
+      const response = await fetch('/api/anpr', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          imageUrl: `/api/camera?t=${cameraRefresh}`,
+        }),
+      });
 
+      if (response.ok) {
+        const data = await response.json();
+        if (data.plates && data.plates.length > 0) {
+          setDetectedPlates(data.plates);
+          // Auto-select the highest confidence plate
+          const topPlate = data.plates.reduce((max: any, plate: any) =>
+            (plate.confidence > max.confidence) ? plate : max
+          );
+          if (topPlate?.plate) {
+            fetchVehicleData(topPlate.plate);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('ANPR processing error:', error);
+    } finally {
+      setAnprProcessing(false);
+      setLastAnprTime(Date.now());
+    }
+  };
 
   const fetchDashboardData = async () => {
     try {
@@ -81,7 +114,7 @@ export default function Home() {
       const { data: activeOrders, error: ordersError } = await supabase
         .from('orders')
         .select('*')
-        .in('status', ['pending', 'ready'])
+        .in('status', ['pending', 'preparing'])
         .order('created_at', { ascending: false })
         .limit(4);
 
@@ -104,47 +137,6 @@ export default function Home() {
     } finally {
       setIsLoading(false);
     }
-  };
-
-      // Add a new plate detection to the Recent Arrivals strip, marking any
-  // previously "serving" entry as completed.
-  const recordArrival = (plate: string) => {
-    setRecentArrivals(prev => {
-      const now = Date.now();
-      const existingIndex = prev.findIndex(a => a.plate === plate);
-
-      if (existingIndex !== -1) {
-        const updated = prev.map((a, i) =>
-          i === existingIndex
-            ? { ...a, detectedAt: now, status: 'serving' as const }
-            : { ...a, status: a.status === 'serving' ? ('completed' as const) : a.status }
-        );
-        return updated;
-      }
-
-      const newArrival: RecentArrival = {
-        plate,
-        detectedAt: now,
-        name: 'Unknown',
-        car: 'Unknown',
-        points: 0,
-        status: 'serving',
-      };
-
-      const demoted = prev.map(a =>
-        a.status === 'serving' ? { ...a, status: 'completed' as const } : a
-      );
-
-      return [newArrival, ...demoted].slice(0, 5);
-    });
-  };
-
-  // Format a timestamp as "X sec"/"X min" for display in Recent Arrivals.
-  const formatTimeAgo = (timestamp: number) => {
-    const diffSec = Math.floor((Date.now() - timestamp) / 1000);
-    if (diffSec < 60) return `${diffSec} sec`;
-    const diffMin = Math.floor(diffSec / 60);
-    return `${diffMin} min`;
   };
 
   // Fetch vehicle details and linked customers
@@ -175,28 +167,15 @@ export default function Home() {
         return;
       }
 
-          setVehicleCustomers(customersData || []);
+      setVehicleCustomers(customersData || []);
       
       // Set first customer as selected (primary driver if available)
       const primaryDriver = customersData?.find(vc => vc.primary_driver);
-      const matchedCustomer = primaryDriver?.customer
-        ?? (customersData && customersData.length > 0 ? customersData[0].customer : null);
-
-      if (matchedCustomer) {
-        setSelectedCustomer(matchedCustomer);
+      if (primaryDriver && primaryDriver.customer) {
+        setSelectedCustomer(primaryDriver.customer);
+      } else if (customersData && customersData.length > 0 && customersData[0].customer) {
+        setSelectedCustomer(customersData[0].customer);
       }
-
-      // Enrich the matching Recent Arrivals entry now that we have real data
-      setRecentArrivals(prev => prev.map(a =>
-        a.plate === plate
-          ? {
-              ...a,
-              name: matchedCustomer?.name || 'Unknown',
-              car: `${vehicleData.colour} ${vehicleData.make} ${vehicleData.model}`,
-              points: matchedCustomer?.loyalty_points || 0,
-            }
-          : a
-      ));
 
       // Fetch all available customers for adding
       const { data: allCustomers } = await supabase
@@ -263,7 +242,7 @@ export default function Home() {
         {/* Top Header Bar */}
         <div className="bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between flex-shrink-0">
           <div className="text-sm font-semibold text-gray-800">
-            Lane 1 <span className="text-green-600">● Online</span>
+            Lane 1 <span className="text-green-600">â— Online</span>
           </div>
           <div className="text-sm font-semibold text-gray-800">
             {time} <span className="text-green-600">Live</span>
@@ -272,39 +251,38 @@ export default function Home() {
 
         {/* Main Content Area */}
         <div className="flex-1 p-3 overflow-hidden">
-                {/* Recent Arrivals - Compact */}
+          {/* Recent Arrivals - Compact */}
           <div className="mb-2 flex-shrink-0">
             <div className="flex gap-2 overflow-x-auto pb-1">
-              {recentArrivals.length === 0 && (
-                <p className="text-xs text-gray-400 py-2">Waiting for first plate detection…</p>
-              )}
-              {recentArrivals.map((arrival) => {
-                const statusLabel =
-                  arrival.status === 'serving' ? 'Ordering'
-                  : arrival.status === 'completed' ? '✔ Served'
-                  : 'Left';
-
-                return (
-                  <button
-                    key={arrival.plate}
-                    onClick={() => fetchVehicleData(arrival.plate)}
-                    className={`flex-shrink-0 w-32 p-2 rounded border-2 text-xs transition-all cursor-pointer ${
-                      arrival.status === 'serving'
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-300 bg-gray-50'
-                    }`}
-                  >
-                    <p className="font-bold text-base text-gray-900 mb-1">{arrival.plate}</p>
-                    <p className="text-gray-700 font-semibold text-xs truncate">{arrival.name}</p>
-                    <p className={`text-xs mt-1 font-semibold ${
-                      arrival.status === 'serving' ? 'text-blue-600' : 'text-green-600'
-                    }`}>
-                      {statusLabel}
-                    </p>
-                    <p className="text-gray-500 text-xs mt-0.5">{formatTimeAgo(arrival.detectedAt)} ago</p>
-                  </button>
-                );
-              })}
+              {[
+                { plate: 'AB12 CDE', name: 'John Smith', time: '14 sec', status: 'serving', statusLabel: 'Ordering', car: 'Blue Ford Focus', points: 240 },
+                { plate: 'CD45 EFG', name: 'Sarah Jones', time: '2 min', status: 'completed', statusLabel: 'âœ” Served', car: 'Red Audi A3', points: 180 },
+                { plate: 'EF78 GHI', name: 'Mike Brown', time: '5 min', status: 'completed', statusLabel: 'âœ” Served', car: 'Silver BMW', points: 95 },
+                { plate: 'GH01 IJK', name: 'Emma Davis', time: '8 min', status: 'completed', statusLabel: 'âœ” Served', car: 'Black VW Golf', points: 320 },
+                { plate: 'IJ23 KLM', name: 'Unknown', time: '12 min', status: 'left', statusLabel: 'Left', car: 'Unknown', points: 0 },
+              ].map((vehicle) => (
+                <button
+                  key={vehicle.plate}
+                  onClick={() => {
+                    setCurrentVehicle(vehicle);
+                    fetchVehicleData(vehicle.plate);
+                  }}
+                  className={`flex-shrink-0 w-32 p-2 rounded border-2 text-xs transition-all cursor-pointer ${
+                    vehicle.status === 'serving'
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-300 bg-gray-50'
+                  }`}
+                >
+                  <p className="font-bold text-base text-gray-900 mb-1">{vehicle.plate}</p>
+                  <p className="text-gray-700 font-semibold text-xs truncate">{vehicle.name}</p>
+                  <p className={`text-xs mt-1 font-semibold ${
+                    vehicle.status === 'serving' ? 'text-blue-600' : 'text-green-600'
+                  }`}>
+                    {vehicle.statusLabel}
+                  </p>
+                  <p className="text-gray-500 text-xs mt-0.5">{vehicle.time} ago</p>
+                </button>
+              ))}
             </div>
           </div>
 
@@ -312,23 +290,84 @@ export default function Home() {
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 flex-1 overflow-hidden">
             {/* Left/Middle Content - Scrollable */}
             <div className="lg:col-span-3 bg-white rounded shadow-sm overflow-y-auto">
-                            {vehicle && (
-                <VehicleInfoCard
-                  vehicle={vehicle}
-                  onCaptureSnapshot={() => console.log('Capture snapshot for vehicle:', vehicle.id)}
-                />
+              {/* Vehicle Info Card */}
+              {vehicle && (
+                <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded p-3 mb-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Left Column - Registration Plate & Details */}
+                    <div className="flex flex-col gap-3">
+                      {/* UK Registration Plate */}
+                      <div className="flex justify-center">
+                        <svg width="560" height="80" viewBox="0 0 560 80" xmlns="http://www.w3.org/2000/svg">
+                          <rect x="1" y="1" width="558" height="78" rx="12" ry="12" fill="#F4D03F" />
+                          <rect x="1" y="1" width="558" height="78" rx="12" ry="12" fill="none" stroke="#000000" strokeWidth="2.5" />
+                          <rect x="8" y="8" width="62" height="64" rx="5" ry="5" fill="#003DA5" stroke="#000000" strokeWidth="1.5" />
+                          <circle cx="24" cy="16" r="1.8" fill="#FFD700" />
+                          <circle cx="32" cy="16" r="1.8" fill="#FFD700" />
+                          <circle cx="36" cy="22" r="1.8" fill="#FFD700" />
+                          <circle cx="37" cy="30" r="1.8" fill="#FFD700" />
+                          <circle cx="32" cy="40" r="1.8" fill="#FFD700" />
+                          <circle cx="24" cy="40" r="1.8" fill="#FFD700" />
+                          <circle cx="16" cy="38" r="1.8" fill="#FFD700" />
+                          <circle cx="14" cy="30" r="1.8" fill="#FFD700" />
+                          <circle cx="16" cy="22" r="1.8" fill="#FFD700" />
+                          <circle cx="28" cy="28" r="1.8" fill="#FFD700" />
+                          <circle cx="28" cy="16" r="1.8" fill="#FFD700" />
+                          <circle cx="28" cy="40" r="1.8" fill="#FFD700" />
+                          <text x="28" y="58" fontFamily="Arial, sans-serif" fontSize="13" fontWeight="bold" fill="#FFFFFF" textAnchor="middle">GB</text>
+                          <text x="290" y="56" fontFamily="'Arial Black', Arial, sans-serif" fontSize="68" fontWeight="900" fill="#000000" textAnchor="middle" letterSpacing="2">{vehicle.plate}</text>
+                        </svg>
+                      </div>
+
+                      {/* Vehicle Specs */}
+                      <div className="space-y-1 text-sm">
+                        <p className="text-gray-700"><span className="font-semibold">Make:</span> {vehicle.make}</p>
+                        <p className="text-gray-700"><span className="font-semibold">Model:</span> {vehicle.model}</p>
+                        <p className="text-gray-700"><span className="font-semibold">Colour:</span> {vehicle.colour}</p>
+                        <p className="text-gray-700"><span className="font-semibold">Year:</span> {vehicle.year}</p>
+                      </div>
+                    </div>
+
+                    {/* Right Column - Stored Vehicle Snapshot Image */}
+                    <div className="flex flex-col gap-2">
+                      <div className="bg-gray-200 rounded border-2 border-gray-400 flex-1 min-h-32 overflow-hidden flex items-center justify-center">
+                        {vehicle.image_url ? (
+                          <img 
+                            src={vehicle.image_url} 
+                            alt="Vehicle Snapshot"
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="text-center p-4">
+                            <p className="text-gray-600 text-sm font-semibold mb-3">ðŸ“· No Image Stored</p>
+                            <button
+                              onClick={() => {
+                                // TODO: Capture snapshot from live feed and save to database
+                                console.log('Capture snapshot for vehicle:', vehicle.id);
+                              }}
+                              className="bg-blue-600 text-white px-3 py-2 rounded text-xs font-semibold hover:bg-blue-700"
+                            >
+                              ðŸ“¸ Capture & Save
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500 text-center">Stored Reference</p>
+                    </div>
+                  </div>
+                </div>
               )}
 
               {/* Customers Linked to Vehicle */}
               {vehicle && (
                 <div className="bg-purple-50 rounded p-3 mb-3 border border-purple-200">
                   <div className="flex items-center justify-between mb-2">
-                    <p className="text-xs font-bold text-gray-900">👥 Customers Using This Vehicle</p>
+                    <p className="text-xs font-bold text-gray-900">ðŸ‘¥ Customers Using This Vehicle</p>
                     <button
                       onClick={() => setShowAddCustomer(!showAddCustomer)}
                       className="bg-emerald-600 text-white px-2 py-1 rounded text-xs font-semibold hover:bg-emerald-700"
                     >
-                      {showAddCustomer ? '✕' : '+ Add'}
+                      {showAddCustomer ? 'âœ•' : '+ Add'}
                     </button>
                   </div>
 
@@ -347,10 +386,10 @@ export default function Home() {
                         <div className="mb-2">
                           <p className="text-xs font-bold text-gray-900 truncate">{vc.customer?.name}</p>
                           <p className="text-xs text-gray-600">
-                            {vc.primary_driver ? '👑 Primary' : '🚗'} {vc.relationship}
+                            {vc.primary_driver ? 'ðŸ‘‘ Primary' : 'ðŸš—'} {vc.relationship}
                           </p>
                         </div>
-                        <p className="text-xs text-yellow-600 mb-2">⭐ {vc.customer?.loyalty_points} Points</p>
+                        <p className="text-xs text-yellow-600 mb-2">â­ {vc.customer?.loyalty_points} Points</p>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -396,13 +435,13 @@ export default function Home() {
                 <>
                   {/* Customer Details */}
                   <div className="bg-amber-50 rounded p-2 mb-2 border border-amber-200">
-                    <p className="text-xs font-semibold text-gray-700 mb-1">📝 Customer Notes</p>
+                    <p className="text-xs font-semibold text-gray-700 mb-1">ðŸ“ Customer Notes</p>
                     <p className="text-xs text-gray-900">Prefers oat milk</p>
                   </div>
 
                   {/* Loyalty Status */}
                   <div className="bg-yellow-50 rounded p-2 mb-2 border border-yellow-200">
-                    <p className="text-xs font-semibold text-gray-700 mb-1">⭐ Loyalty Status</p>
+                    <p className="text-xs font-semibold text-gray-700 mb-1">â­ Loyalty Status</p>
                     <p className="text-xs text-yellow-700 font-bold">Gold Customer</p>
                     <p className="text-xs text-gray-600 mt-1">Total Points: {selectedCustomer.loyalty_points}</p>
                     <p className="text-xs text-gray-600">Next Reward: {selectedCustomer.loyalty_points + 20} points</p>
@@ -413,29 +452,29 @@ export default function Home() {
               {/* Previous Order */}
               <div className="bg-gray-50 rounded p-2 mb-2">
                 <p className="text-xs font-semibold text-gray-700 mb-1">Previous Order</p>
-                <p className="text-xs text-gray-500 mb-2">⏰ Yesterday, 08:42</p>
+                <p className="text-xs text-gray-500 mb-2">â° Yesterday, 08:42</p>
                 <div className="space-y-1 mb-2">
-                  <p className="text-xs text-gray-900">🍵 Large Latte</p>
-                  <p className="text-xs text-gray-900">🥓 Bacon Roll</p>
+                  <p className="text-xs text-gray-900">ðŸµ Large Latte</p>
+                  <p className="text-xs text-gray-900">ðŸ¥“ Bacon Roll</p>
                 </div>
-                <p className="text-xs font-bold text-gray-900">Total: <span className="text-emerald-600">£7.70</span></p>
+                <p className="text-xs font-bold text-gray-900">Total: <span className="text-emerald-600">Â£7.70</span></p>
               </div>
 
               {/* Suggested Order */}
               <div className="bg-emerald-50 rounded p-3 border border-emerald-200">
-                <p className="text-xs font-bold text-gray-900 mb-2">🍽️ Suggested Order</p>
+                <p className="text-xs font-bold text-gray-900 mb-2">ðŸ½ï¸ Suggested Order</p>
                 <div className="space-y-2 mb-3">
                   <label className="flex items-center text-xs cursor-pointer">
                     <input type="checkbox" checked readOnly className="mr-2 w-4 h-4" />
-                    <span className="text-gray-900">🍵 Large Latte</span>
+                    <span className="text-gray-900">ðŸµ Large Latte</span>
                   </label>
                   <label className="flex items-center text-xs cursor-pointer">
                     <input type="checkbox" checked readOnly className="mr-2 w-4 h-4" />
-                    <span className="text-gray-900">🥓 Bacon Roll</span>
+                    <span className="text-gray-900">ðŸ¥“ Bacon Roll</span>
                   </label>
                   <label className="flex items-center text-xs cursor-pointer">
                     <input type="checkbox" className="mr-2 w-4 h-4" />
-                    <span className="text-gray-900">🥐 Hash Brown</span>
+                    <span className="text-gray-900">ðŸ¥ Hash Brown</span>
                   </label>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
@@ -456,7 +495,7 @@ export default function Home() {
                 <div className="w-full h-full bg-gray-800 flex items-center justify-center relative">
                   <div className="absolute top-2 left-2 bg-green-600 text-white px-2 py-1 rounded text-xs font-semibold flex items-center gap-1 z-10">
                     <span className="w-2 h-2 bg-green-300 rounded-full inline-block animate-pulse"></span>
-                    Live WebRTC · ANPR 0.5 FPS
+                    Live WebRTC Â· ANPR 0.5 FPS
                   </div>
                   <WebRTCVideo />
                   <div className="absolute bottom-2 right-2 text-gray-400 text-xs bg-gray-900 px-2 py-1 rounded">WebRTC</div>
@@ -466,7 +505,7 @@ export default function Home() {
               {/* Detected Plates from ANPR */}
               {detectedPlates.length > 0 && (
                 <div className="bg-blue-900 rounded shadow-sm p-3 border border-blue-700">
-                  <h3 className="text-xs font-semibold text-white mb-2">🚗 Detected Plates</h3>
+                  <h3 className="text-xs font-semibold text-white mb-2">ðŸš— Detected Plates</h3>
                   <div className="space-y-2">
                     {detectedPlates.slice(0, 3).map((plate, idx) => (
                       <div key={idx} className="bg-blue-800 rounded p-2">
@@ -492,15 +531,15 @@ export default function Home() {
                 <div className="space-y-1 text-xs">
                   <div className="flex items-center justify-between bg-emerald-700 rounded px-2 py-1">
                     <span>Lane 1</span>
-                    <span className="font-semibold">🟢 Ordering</span>
+                    <span className="font-semibold">ðŸŸ¢ Ordering</span>
                   </div>
                   <div className="flex items-center justify-between bg-emerald-700 rounded px-2 py-1">
                     <span>Lane 2</span>
-                    <span className="font-semibold">🟢 Empty</span>
+                    <span className="font-semibold">ðŸŸ¢ Empty</span>
                   </div>
                   <div className="flex items-center justify-between bg-red-600 rounded px-2 py-1">
                     <span>Lane 3</span>
-                    <span className="font-semibold">🔴 Offline</span>
+                    <span className="font-semibold">ðŸ”´ Offline</span>
                   </div>
                 </div>
               </div>
@@ -510,10 +549,10 @@ export default function Home() {
                 <h3 className="text-xs font-semibold text-gray-900 mb-1">Today's Top Items</h3>
                 <div className="space-y-1">
                   {[
-                    { label: '🍵 Latte', value: 24 },
-                    { label: '☕ Cappuccino', value: 19 },
-                    { label: '🥓 Bacon Roll', value: 17 },
-                    { label: '🥐 Croissant', value: 12 },
+                    { label: 'ðŸµ Latte', value: 24 },
+                    { label: 'â˜• Cappuccino', value: 19 },
+                    { label: 'ðŸ¥“ Bacon Roll', value: 17 },
+                    { label: 'ðŸ¥ Croissant', value: 12 },
                   ].map((item) => (
                     <div key={item.label} className="flex items-center justify-between text-xs border-b border-gray-200 pb-1">
                       <span className="text-gray-700 font-medium">{item.label}</span>
@@ -529,13 +568,13 @@ export default function Home() {
         {/* Recognition Status Strip */}
         <div className="bg-gray-100 border-t border-gray-200 px-4 py-2 flex items-center justify-start gap-8 flex-shrink-0 text-xs">
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-gray-700">📷 Camera: Lane 1</span>
+            <span className="font-semibold text-gray-700">ðŸ“· Camera: Lane 1</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-green-700 font-semibold">✔ Plate Confidence: 98.7%</span>
+            <span className="text-green-700 font-semibold">âœ” Plate Confidence: 98.7%</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-gray-600">🕒 Arrived: 14 seconds ago</span>
+            <span className="text-gray-600">ðŸ•’ Arrived: 14 seconds ago</span>
           </div>
         </div>
       </main>
