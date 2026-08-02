@@ -7,7 +7,7 @@ import { BottomNav } from '@/components/BottomNav';
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
-  const [filter, setFilter] = useState<'all' | 'pending' | 'preparing' | 'ready' | 'completed'>(
+  const [filter, setFilter] = useState<'all' | 'pending' | 'preparing' | 'completed'>(
     'all'
   );
   const [isLoading, setIsLoading] = useState(true);
@@ -46,7 +46,7 @@ export default function OrdersPage() {
 
         {/* Filter Buttons - Compact */}
         <div className="mb-4 flex gap-1 overflow-x-auto pb-2">
-          {['all', 'pending', 'preparing', 'ready', 'completed'].map((status) => (
+          {['all', 'pending', 'preparing', 'completed'].map((status) => (
             <button
               key={status}
               onClick={() => setFilter(status as typeof filter)}
@@ -84,7 +84,7 @@ export default function OrdersPage() {
                   <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
                     order.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
                     order.status === 'preparing' ? 'bg-blue-100 text-blue-800' :
-                    order.status === 'ready' ? 'bg-green-100 text-green-800' :
+                    order.status === 'completed' ? 'bg-green-100 text-green-800' :
                     'bg-gray-100 text-gray-800'
                   }`}>
                     {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
