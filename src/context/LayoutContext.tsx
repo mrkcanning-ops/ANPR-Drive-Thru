@@ -1,4 +1,6 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+'use client';
+
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 
 export interface PanelLayout {
   id: string;
@@ -138,10 +140,21 @@ const DEFAULT_PANELS: Record<string, PanelLayout> = {
 
 export const LayoutProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isEditMode, setIsEditMode] = useState(false);
-  const [panels, setPanels] = useState<Record<string, PanelLayout>>(() => {
+  const [panels, setPanels] = useState<Record<string, PanelLayout>>(DEFAULT_PANELS);
+  const [isClient, setIsClient] = useState(false);
+
+  // Load saved layout from localStorage only on client
+  useEffect(() => {
+    setIsClient(true);
     const saved = localStorage.getItem('dashboard-layout');
-    return saved ? JSON.parse(saved) : DEFAULT_PANELS;
-  });
+    if (saved) {
+      try {
+        setPanels(JSON.parse(saved));
+      } catch (e) {
+        console.error('Failed to parse saved layout:', e);
+      }
+    }
+  }, []);
 
   const updatePanel = useCallback((id: string, updates: Partial<PanelLayout>) => {
     setPanels((prev) => ({
