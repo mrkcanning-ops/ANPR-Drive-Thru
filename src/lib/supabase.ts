@@ -10,7 +10,7 @@ export interface Order {
   id: string;
   order_number: number;
   customer_name: string;
-  status: 'pending' | 'preparing' | 'ready' | 'completed';
+  status: 'pending' | 'preparing' | 'completed';
   items: string[];
   total_price: number;
   created_at: string;
