@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 export function WebRTCVideo() {
   const [isMobile, setIsMobile] = useState(false);
   const [started, setStarted] = useState(false);
-  const GO2RTC_URL = process.env.NEXT_PUBLIC_GO2RTC_URL || 'http://192.168.0.52:1984';
+  const [streamUrl, setStreamUrl] = useState<string>('/api/stream-proxy');
 
   useEffect(() => {
     const mobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
@@ -30,26 +30,27 @@ export function WebRTCVideo() {
             color: '#fff',
             background: '#111',
             border: 'none',
-            fontSize: '16px'
+            fontSize: '16px',
+            cursor: 'pointer',
+            fontWeight: 'bold'
           }}
         >
           Tap to start live feed
         </button>
       ) : (
         <iframe
-          src={`${GO2RTC_URL}/stream.html?src=reolink`}
+          key={started ? 'streaming' : 'idle'}
+          src={streamUrl}
           title="Live Camera Feed"
           style={{
             width: '100%',
             height: '100%',
             border: 'none',
             display: 'block',
-            backgroundColor: '#000',
-            transform: 'scale(1.25)',
-            transformOrigin: 'center',
-            objectFit: 'cover'
+            backgroundColor: '#000'
           }}
-          allow="autoplay *; fullscreen *; camera *; microphone *"
+          allow="autoplay; fullscreen; camera; microphone"
+          sandbox="allow-forms allow-modals allow-pointer-lock allow-presentation allow-same-origin allow-scripts allow-top-navigation-by-user-activation"
         />
       )}
     </div>
