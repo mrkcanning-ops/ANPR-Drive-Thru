@@ -5,35 +5,32 @@ export async function POST(request: NextRequest) {
     const { imageUrl } = await request.json();
     const apiKey = process.env.NEXT_PUBLIC_PLATE_RECOGNIZER_API_KEY;
 
+    console.log('[ANPR] imageUrl:', imageUrl);
+    console.log('[ANPR] apiKey present:', !!apiKey);
+
     if (!apiKey) {
-      return NextResponse.json(
-        { error: 'Plate Recognizer API key not configured' },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: 'Plate Recognizer API key not configured' }, { status: 500 });
     }
 
     if (!imageUrl) {
-      return NextResponse.json(
-        { error: 'Image URL required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Image URL required' }, { status: 400 });
     }
 
-    // Fetch the actual JPEG bytes ourselves, server-side, since this
-    // Next.js server (unlike Plate Recognizer's cloud) can reach the
-    // local go2rtc snapshot endpoint.
     const imageResponse = await fetch(imageUrl);
+    console.log('[ANPR] snapshot status:', imageResponse.status, imageResponse.headers.get('content-type'));
+
     if (!imageResponse.ok) {
-      console.error(`Failed to fetch camera snapshot: ${imageResponse.status}`);
       return NextResponse.json(
-        { error: `Failed to fetch camera snapshot: ${imageResponse.status}` },
+        {
+          error: 'Failed to fetch camera snapshot',
+          detail: `Snapshot fetch failed with status ${imageResponse.status}`,
+        },
         { status: 502 }
       );
     }
+
     const imageBuffer = await imageResponse.arrayBuffer();
 
-    // Upload the actual image bytes to Plate Recognizer instead of a URL,
-    // since our camera isn't publicly reachable from their servers.
     const formData = new FormData();
     formData.append('upload', new Blob([imageBuffer], { type: 'image/jpeg' }), 'snapshot.jpg');
     formData.append('regions', 'gb');
@@ -46,15 +43,22 @@ export async function POST(request: NextRequest) {
       body: formData,
     });
 
+    console.log('[ANPR] Plate Recognizer status:', response.status);
+
+    const responseText = await response.text();
+    console.log('[ANPR] Plate Recognizer raw response:', responseText);
+
     if (!response.ok) {
-      console.error(`Plate Recognizer error: ${response.status}`);
       return NextResponse.json(
-        { error: `Plate Recognizer returned ${response.status}` },
+        {
+          error: `Plate Recognizer returned ${response.status}`,
+          detail: responseText,
+        },
         { status: response.status }
       );
     }
 
-    const data = await response.json();
+    const data = JSON.parse(responseText);
 
     const detectedPlates = data.results?.map((result: any) => ({
       plate: result.plate,
@@ -73,9 +77,12 @@ export async function POST(request: NextRequest) {
       rawResponse: data,
     });
   } catch (error) {
-    console.error('ANPR processing error:', error);
+    console.error('[ANPR] processing error:', error);
     return NextResponse.json(
-      { error: 'Failed to process image for ANPR' },
+      {
+        error: 'Failed to process image for ANPR',
+        detail: error instanceof Error ? error.message : String(error),
+      },
       { status: 500 }
     );
   }

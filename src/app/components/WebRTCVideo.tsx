@@ -1,11 +1,17 @@
 'use client';
 
-/**
- * LIVE CAMERA FEED COMPONENT
- * Displays real-time video stream from the camera via go2rtc
- * Used alongside the stored vehicle image for comparison
- */
+import { useEffect, useState } from 'react';
+
 export function WebRTCVideo() {
+  const [isMobile, setIsMobile] = useState(false);
+  const [started, setStarted] = useState(false);
+
+  useEffect(() => {
+    const mobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    setIsMobile(mobile);
+    setStarted(!mobile);
+  }, []);
+
   return (
     <div style={{
       width: '100%',
@@ -14,21 +20,37 @@ export function WebRTCVideo() {
       backgroundColor: '#000',
       position: 'relative'
     }}>
-      <iframe
-        src="http://localhost:1984/stream.html?src=reolink"
-        title="Live Camera Feed"
-        style={{ 
-          width: '100%',
-          height: '100%',
-          border: 'none',
-          display: 'block',
-          backgroundColor: '#000',
-          transform: 'scale(1.25)',
-          transformOrigin: 'center',
-          objectFit: 'cover'
-        }}
-        allow="autoplay *; fullscreen *; camera *; microphone *"
-      />
+      {!started && isMobile ? (
+        <button
+          onClick={() => setStarted(true)}
+          style={{
+            width: '100%',
+            height: '100%',
+            color: '#fff',
+            background: '#111',
+            border: 'none',
+            fontSize: '16px'
+          }}
+        >
+          Tap to start live feed
+        </button>
+      ) : (
+        <iframe
+          src="http://localhost:1984/stream.html?src=reolink"
+          title="Live Camera Feed"
+          style={{
+            width: '100%',
+            height: '100%',
+            border: 'none',
+            display: 'block',
+            backgroundColor: '#000',
+            transform: 'scale(1.25)',
+            transformOrigin: 'center',
+            objectFit: 'cover'
+          }}
+          allow="autoplay *; fullscreen *; camera *; microphone *"
+        />
+      )}
     </div>
   );
 }

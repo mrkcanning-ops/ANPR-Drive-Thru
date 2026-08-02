@@ -32,6 +32,7 @@ yarn-error.log*
 # go2rtc binaries
 /go2rtc/go2rtc.exe
 /go2rtc/*.exe
+/go2rtc/bin/
 .pnpm-debug.log*
 
 # env files (can opt-in for committing if needed)
