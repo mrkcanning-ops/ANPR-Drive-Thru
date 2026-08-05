@@ -68,6 +68,7 @@ export async function POST(request: NextRequest) {
     const formData = new FormData();
     formData.append('upload', new Blob([imageBuffer], { type: 'image/jpeg' }), 'snapshot.jpg');
     formData.append('regions', 'gb');
+    formData.append('mmc', 'true'); // Enable Make, Model, Color detection (requires paid feature)
 
     const response = await fetch('https://api.platerecognizer.com/v1/plate-reader/', {
       method: 'POST',
@@ -99,13 +100,25 @@ export async function POST(request: NextRequest) {
       confidence: result.score, // score field from API response
       dscore: result.dscore,
       vehicle: {
-        color: result.vehicle?.color?.[0]?.color,
         type: result.vehicle?.type?.[0]?.type,
+        typeScore: result.vehicle?.type?.[0]?.score,
+        color: result.vehicle?.color?.[0]?.color,
+        colorScore: result.vehicle?.color?.[0]?.score,
+        make: result.model_make?.make?.[0]?.make, // Requires mmc=true
+        model: result.model_make?.model?.[0]?.model, // Requires mmc=true
+        makeModelScore: result.model_make?.score,
+        year: result.year?.year_range?.[0], // Requires mmc=true
+        yearScore: result.year?.score,
+        orientation: result.orientation?.orientation?.[0]?.orientation, // Requires mmc=true
+        orientationScore: result.orientation?.score,
       },
       box: result.box,
     })) || [];
 
     console.log(`[ANPR-DEBUG ${timestamp}] Detected ${detectedPlates.length} plate(s): ${detectedPlates.map((p: any) => p.plate).join(', ')}`);
+    detectedPlates.forEach((plate: any, idx: number) => {
+      console.log(`[ANPR-DEBUG ${timestamp}] Plate ${idx + 1}: ${plate.plate} | Vehicle: ${plate.vehicle.color} ${plate.vehicle.make} ${plate.vehicle.model} (${plate.vehicle.type})`);
+    });
     console.log(`[ANPR-DEBUG ${timestamp}] ========== ANPR RESPONSE SENT ==========\n`);
 
     return NextResponse.json({

@@ -10,6 +10,7 @@ import { NotesLoyaltySection } from '@/components/dashboard/NotesLoyaltySection'
 import { OrdersSection } from '@/components/dashboard/OrdersSection';
 import { CameraSection } from '@/components/dashboard/CameraSection';
 import { DetectedPlatesSection } from '@/components/dashboard/DetectedPlatesSection';
+import { PlateRecognitionModal } from '@/components/PlateRecognitionModal';
 import { LaneStatusSection, TopItemsSection, RecognitionConfidenceSection } from '@/components/dashboard/StatusSections';
 import { Radio, Car, ChevronDown, ChevronRight, X } from 'lucide-react';
 
@@ -40,6 +41,11 @@ function DashboardContent() {
   const [anprProcessing, setAnprProcessing] = useState(false);
   const [lastAnprTime, setLastAnprTime] = useState(0);
   const [currentVehicle, setCurrentVehicle] = useState({ plate: 'AB12 CDE', name: 'John Smith', time: '14 sec', status: 'serving', statusLabel: 'Ordering', car: 'Blue Ford Focus', points: 240 });
+
+  // Plate Recognition Modal state
+  const [showPlateModal, setShowPlateModal] = useState(false);
+  const [lastDetectedPlate, setLastDetectedPlate] = useState('');
+  const [detectedVehicleData, setDetectedVehicleData] = useState<any>(null);
 
   // Recent arrivals timeline - auto-feeds as new plates are detected
   const [recentArrivals, setRecentArrivals] = useState(initialArrivals);
@@ -185,6 +191,13 @@ function DashboardContent() {
           fetchVehicleData(topPlate.plate);
           registerArrival(topPlate.plate);
           console.log(`[ANPR-DEBUG ${debugTimestamp}] Registered arrival: ${topPlate.plate}`);
+          
+          // Show modal for new plate (only if different from last detected)
+          if (lastDetectedPlate !== topPlate.plate) {
+            setLastDetectedPlate(topPlate.plate);
+            setDetectedVehicleData(topPlate.vehicle); // Pass vehicle detection data
+            setShowPlateModal(true);
+          }
         }
       } else {
         console.log(`[ANPR-DEBUG ${debugTimestamp}] No plates detected in frame`);
@@ -301,6 +314,64 @@ function DashboardContent() {
       setShowAddCustomer(false);
     } catch (error) {
       console.error('Error adding customer to vehicle:', error);
+    }
+  };
+
+  // Add a new vehicle and driver to the system
+  const handleAddVehicleAndDriver = async (plate: string, driverName: string, vehicleInfo: string) => {
+    try {
+      // Create a new customer (driver)
+      const { data: newCustomer, error: customerError } = await supabase
+        .from('customers')
+        .insert([
+          {
+            name: driverName,
+            email: '', // Optional: could prompt for this
+            phone: '', // Optional: could prompt for this
+            loyalty_points: 0,
+          },
+        ])
+        .select()
+        .single();
+
+      if (customerError) throw customerError;
+
+      // Create a new vehicle
+      const { data: newVehicle, error: vehicleError } = await supabase
+        .from('vehicles')
+        .insert([
+          {
+            plate: plate.toUpperCase(),
+            description: vehicleInfo || 'Unknown vehicle',
+            make: '',
+            model: '',
+            year: new Date().getFullYear(),
+          },
+        ])
+        .select()
+        .single();
+
+      if (vehicleError) throw vehicleError;
+
+      // Link the vehicle to the customer as primary driver
+      const { error: linkError } = await supabase
+        .from('vehicle_customers')
+        .insert([
+          {
+            vehicle_id: newVehicle.id,
+            customer_id: newCustomer.id,
+            primary_driver: true,
+            relationship: 'owner',
+          },
+        ]);
+
+      if (linkError) throw linkError;
+
+      // Fetch the updated vehicle data to populate the modal
+      await fetchVehicleData(plate);
+    } catch (error) {
+      console.error('Error adding vehicle and driver:', error);
+      throw error;
     }
   };
 
@@ -464,6 +535,20 @@ function DashboardContent() {
 
       {/* Bottom Navigation for Tablet/Mobile */}
       <BottomNav />
+
+      {/* Plate Recognition Modal */}
+      <PlateRecognitionModal
+        isOpen={showPlateModal}
+        plate={lastDetectedPlate}
+        vehicle={vehicle}
+        vehicleCustomers={vehicleCustomers}
+        selectedCustomer={selectedCustomer}
+        availableCustomers={availableCustomers}
+        onClose={() => setShowPlateModal(false)}
+        onSelectCustomer={setSelectedCustomer}
+        onAddVehicle={handleAddVehicleAndDriver}
+        vehicleData={detectedVehicleData}
+      />
 
       {/* Vehicle Image Picker Modal */}
       {showImagePicker && (
