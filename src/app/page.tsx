@@ -369,26 +369,45 @@ function DashboardContent() {
       const normalizedPlate = plate.replace(/\s+/g, '').toUpperCase();
       console.log(`[ADD-VEHICLE] Starting vehicle/driver creation for plate: "${normalizedPlate}"`);
       
-      // Create a new customer (driver)
-      console.log(`[ADD-VEHICLE] Step 1: Creating customer "${driverName}"...`);
-      const { data: newCustomer, error: customerError } = await supabase
+      // Step 1: Check if customer with this name already exists
+      console.log(`[ADD-VEHICLE] Step 1: Checking if customer "${driverName}" exists...`);
+      let newCustomer = null;
+      const { data: existingCustomers, error: searchError } = await supabase
         .from('customers')
-        .insert([
-          {
-            name: driverName,
-            email: '', // Optional: could prompt for this
-            phone: '', // Optional: could prompt for this
-            loyalty_points: 0,
-          },
-        ])
-        .select()
+        .select('*')
+        .ilike('name', driverName)
         .single();
 
-      if (customerError) {
-        console.error(`[ADD-VEHICLE] ERROR creating customer:`, customerError);
-        throw customerError;
+      if (searchError && searchError.code !== 'PGRST116') {
+        // PGRST116 = no rows returned (which is what we expect if customer doesn't exist)
+        console.error(`[ADD-VEHICLE] ERROR searching for existing customer:`, searchError);
+      } else if (existingCustomers) {
+        // Customer already exists - reuse it
+        console.log(`[ADD-VEHICLE] Step 1 Complete: Found existing customer with ID ${existingCustomers.id}`);
+        newCustomer = existingCustomers;
+      } else {
+        // Customer doesn't exist - create new one
+        console.log(`[ADD-VEHICLE] Step 1 Result: Customer not found, creating new one...`);
+        const { data: createdCustomer, error: customerError } = await supabase
+          .from('customers')
+          .insert([
+            {
+              name: driverName,
+              email: '',
+              phone: '',
+              loyalty_points: 0,
+            },
+          ])
+          .select()
+          .single();
+
+        if (customerError) {
+          console.error(`[ADD-VEHICLE] ERROR creating customer:`, customerError);
+          throw customerError;
+        }
+        console.log(`[ADD-VEHICLE] Step 1 Complete: Customer created with ID ${createdCustomer.id}`);
+        newCustomer = createdCustomer;
       }
-      console.log(`[ADD-VEHICLE] Step 1 Complete: Customer created with ID ${newCustomer.id}`);
 
       // Create a new vehicle
       console.log(`[ADD-VEHICLE] Step 2: Creating vehicle with plate "${normalizedPlate}"...`);
