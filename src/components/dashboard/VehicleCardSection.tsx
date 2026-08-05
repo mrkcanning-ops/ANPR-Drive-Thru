@@ -10,6 +10,18 @@ interface VehicleCardSectionProps {
 }
 
 export const VehicleCardSection: React.FC<VehicleCardSectionProps> = ({ vehicle, onStoreImage }) => {
+  if (!vehicle) {
+    return (
+      <div className="bg-white border border-gray-200 rounded-xl p-4 h-full overflow-y-auto flex flex-col items-center justify-center gap-4">
+        <Car size={48} className="text-gray-300" />
+        <div className="text-center">
+          <p className="text-gray-500 font-semibold">No Vehicle Detected</p>
+          <p className="text-sm text-gray-400">Waiting for license plate recognition</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-4 h-full overflow-y-auto">
       {/* Plate + Photo Row */}

@@ -17,17 +17,6 @@ import { Radio, Car, ChevronDown, ChevronRight, X } from 'lucide-react';
 const MAX_ARRIVALS = 8;
 const MAX_FRAME_BUFFER = 10;
 
-const initialArrivals = [
-  { time: '10:24:31', plate: 'AB12 CDE' },
-  { time: '10:24:19', plate: 'YX20 LBU' },
-  { time: '10:24:05', plate: 'GF19 OMM' },
-  { time: '10:23:52', plate: 'HJ68 VKT' },
-  { time: '10:23:41', plate: 'NU21 ZPT' },
-  { time: '10:23:29', plate: 'SL18 KXR' },
-  { time: '10:23:17', plate: 'BD66 YHW' },
-  { time: '10:23:06', plate: 'WV12 XPL' },
-];
-
 interface FrameCapture {
   blob: Blob;
   url: string;
@@ -40,7 +29,6 @@ function DashboardContent() {
   const [detectedPlates, setDetectedPlates] = useState<any[]>([]);
   const [anprProcessing, setAnprProcessing] = useState(false);
   const [lastAnprTime, setLastAnprTime] = useState(0);
-  const [currentVehicle, setCurrentVehicle] = useState({ plate: 'AB12 CDE', name: 'John Smith', time: '14 sec', status: 'serving', statusLabel: 'Ordering', car: 'Blue Ford Focus', points: 240 });
 
   // Plate Recognition Modal state
   const [showPlateModal, setShowPlateModal] = useState(false);
@@ -48,7 +36,7 @@ function DashboardContent() {
   const [detectedVehicleData, setDetectedVehicleData] = useState<any>(null);
 
   // Recent arrivals timeline - auto-feeds as new plates are detected
-  const [recentArrivals, setRecentArrivals] = useState(initialArrivals);
+  const [recentArrivals, setRecentArrivals] = useState<{ time: string; plate: string }[]>([]);
 
   // Rolling buffer of recently captured frames, used to pick a still image to store per-vehicle
   const [frameBuffer, setFrameBuffer] = useState<FrameCapture[]>([]);
@@ -100,7 +88,6 @@ function DashboardContent() {
 
   useEffect(() => {
     fetchDashboardData();
-    fetchVehicleData('AB12 CDE'); // Load first vehicle on mount
     // Subscribe to real-time updates
     const subscription = supabase
       .channel('orders')
@@ -254,6 +241,10 @@ function DashboardContent() {
 
       if (vehicleError) {
         console.error('Error fetching vehicle:', vehicleError);
+        // Clear vehicle state if not found
+        setVehicle(null);
+        setVehicleCustomers([]);
+        setSelectedCustomer(null);
         return;
       }
 
