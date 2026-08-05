@@ -77,8 +77,9 @@ export const PlateRecognitionModal: React.FC<PlateRecognitionModalProps> = ({
       setNewVehicleInfo('');
       onClose();
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       console.error('Error adding vehicle:', error);
-      alert('Failed to add vehicle');
+      alert(`Failed to add vehicle: ${errorMessage}`);
     } finally {
       setIsSaving(false);
     }
