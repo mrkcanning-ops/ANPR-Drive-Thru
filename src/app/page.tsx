@@ -232,11 +232,15 @@ function DashboardContent() {
   // Fetch vehicle details and linked customers
   const fetchVehicleData = async (plate: string) => {
     try {
-      // Fetch vehicle by plate
+      // Normalize plate: remove spaces and convert to uppercase for consistent matching
+      const normalizedPlate = plate.replace(/\s+/g, '').toUpperCase();
+      console.log(`[ANPR-DEBUG] Fetching vehicle for plate: "${plate}" (normalized: "${normalizedPlate}")`);
+      
+      // Fetch vehicle by plate (case-insensitive search)
       const { data: vehicleData, error: vehicleError } = await supabase
         .from('vehicles')
         .select('*')
-        .eq('plate', plate)
+        .eq('plate', normalizedPlate)
         .single();
 
       if (vehicleError) {
@@ -311,6 +315,9 @@ function DashboardContent() {
   // Add a new vehicle and driver to the system
   const handleAddVehicleAndDriver = async (plate: string, driverName: string, vehicleInfo: string) => {
     try {
+      // Normalize plate: remove spaces and convert to uppercase for consistent storage
+      const normalizedPlate = plate.replace(/\s+/g, '').toUpperCase();
+      
       // Create a new customer (driver)
       const { data: newCustomer, error: customerError } = await supabase
         .from('customers')
@@ -332,7 +339,7 @@ function DashboardContent() {
         .from('vehicles')
         .insert([
           {
-            plate: plate.toUpperCase(),
+            plate: normalizedPlate,
             description: vehicleInfo || 'Unknown vehicle',
             make: '',
             model: '',
@@ -359,7 +366,7 @@ function DashboardContent() {
       if (linkError) throw linkError;
 
       // Fetch the updated vehicle data to populate the modal
-      await fetchVehicleData(plate);
+      await fetchVehicleData(normalizedPlate);
     } catch (error) {
       console.error('Error adding vehicle and driver:', error);
       throw error;
