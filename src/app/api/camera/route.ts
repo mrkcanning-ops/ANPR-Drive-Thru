@@ -18,7 +18,6 @@ export async function GET(request: NextRequest) {
     // Fetch JPEG frame from go2rtc HTTP endpoint
     const response = await fetch(frameUrl, {
       method: 'GET',
-      timeout: 10000,
     });
 
     if (!response.ok) {
