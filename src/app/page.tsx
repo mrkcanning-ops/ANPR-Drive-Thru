@@ -4,9 +4,6 @@ import { useEffect, useState } from 'react';
 import { supabase, Order, DailyStats, Vehicle, Customer, VehicleCustomer } from '@/lib/supabase';
 import { Sidebar } from '@/components/Sidebar';
 import { BottomNav } from '@/components/BottomNav';
-import { DraggablePanel } from '@/components/DraggablePanel';
-import { LayoutProvider, useLayout } from '@/context/LayoutContext';
-import { LayoutEditorToolbar, LayoutEditorContainer } from '@/components/LayoutEditorToolbar';
 import { VehicleCardSection } from '@/components/dashboard/VehicleCardSection';
 import { CustomersSection } from '@/components/dashboard/CustomersSection';
 import { NotesLoyaltySection } from '@/components/dashboard/NotesLoyaltySection';
@@ -14,9 +11,12 @@ import { OrdersSection } from '@/components/dashboard/OrdersSection';
 import { CameraSection } from '@/components/dashboard/CameraSection';
 import { DetectedPlatesSection } from '@/components/dashboard/DetectedPlatesSection';
 import { LaneStatusSection, TopItemsSection, RecognitionConfidenceSection } from '@/components/dashboard/StatusSections';
-import { Radio } from 'lucide-react';
+import { Radio, Car, ChevronDown, ChevronRight, X } from 'lucide-react';
 
-const recentArrivals = [
+const MAX_ARRIVALS = 8;
+const MAX_FRAME_BUFFER = 10;
+
+const initialArrivals = [
   { time: '10:24:31', plate: 'AB12 CDE' },
   { time: '10:24:19', plate: 'YX20 LBU' },
   { time: '10:24:05', plate: 'GF19 OMM' },
@@ -27,16 +27,28 @@ const recentArrivals = [
   { time: '10:23:06', plate: 'WV12 XPL' },
 ];
 
+interface FrameCapture {
+  blob: Blob;
+  url: string;
+  timestamp: number;
+}
+
 function DashboardContent() {
-  const { isEditMode } = useLayout();
-  
   const [time, setTime] = useState<string>('');
   const [cameraRefresh, setCameraRefresh] = useState<number>(0);
   const [detectedPlates, setDetectedPlates] = useState<any[]>([]);
   const [anprProcessing, setAnprProcessing] = useState(false);
   const [lastAnprTime, setLastAnprTime] = useState(0);
   const [currentVehicle, setCurrentVehicle] = useState({ plate: 'AB12 CDE', name: 'John Smith', time: '14 sec', status: 'serving', statusLabel: 'Ordering', car: 'Blue Ford Focus', points: 240 });
-  
+
+  // Recent arrivals timeline - auto-feeds as new plates are detected
+  const [recentArrivals, setRecentArrivals] = useState(initialArrivals);
+
+  // Rolling buffer of recently captured frames, used to pick a still image to store per-vehicle
+  const [frameBuffer, setFrameBuffer] = useState<FrameCapture[]>([]);
+  const [showImagePicker, setShowImagePicker] = useState(false);
+  const [savingImage, setSavingImage] = useState(false);
+
   // New state for multi-customer vehicle support
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
   const [vehicleCustomers, setVehicleCustomers] = useState<(VehicleCustomer & { customer: Customer })[]>([]);
@@ -96,18 +108,39 @@ function DashboardContent() {
     };
   }, []);
 
-  // ANPR processing function - runs at 1 fps (every 10 frames at 100ms)
+  // Add a newly detected plate to the front of the arrivals timeline (auto-feed).
+  // Skips duplicates of the most recent entry so a lingering vehicle doesn't spam the strip.
+  const registerArrival = (plate: string) => {
+    setRecentArrivals(prev => {
+      if (prev.length > 0 && prev[0].plate === plate) return prev;
+      const timeStr = new Date().toLocaleTimeString('en-GB', { hour12: false });
+      return [{ time: timeStr, plate }, ...prev].slice(0, MAX_ARRIVALS);
+    });
+  };
+
+  // ANPR processing function - runs at 0.5 fps (every 20 frames at 100ms).
+  // Captures the camera snapshot once, buffers it for the vehicle-photo picker,
+  // then sends the same image directly to the ANPR endpoint (no duplicate capture).
   const processAnpr = async () => {
     setAnprProcessing(true);
     try {
+      const snapshotRes = await fetch(`/api/camera?t=${cameraRefresh}`);
+      if (!snapshotRes.ok) return;
+      const blob = await snapshotRes.blob();
+
+      const frameUrl = URL.createObjectURL(blob);
+      setFrameBuffer(prev => {
+        const dropped = prev.slice(MAX_FRAME_BUFFER - 1);
+        dropped.forEach(f => URL.revokeObjectURL(f.url));
+        return [{ blob, url: frameUrl, timestamp: Date.now() }, ...prev].slice(0, MAX_FRAME_BUFFER);
+      });
+
+      const formData = new FormData();
+      formData.append('image', blob, 'snapshot.jpg');
+
       const response = await fetch('/api/anpr', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          imageUrl: `/api/camera?t=${cameraRefresh}`,
-        }),
+        body: formData,
       });
 
       if (response.ok) {
@@ -120,6 +153,7 @@ function DashboardContent() {
           );
           if (topPlate?.plate) {
             fetchVehicleData(topPlate.plate);
+            registerArrival(topPlate.plate);
           }
         }
       }
@@ -255,6 +289,36 @@ function DashboardContent() {
     }
   };
 
+  // Upload a picked frame as the vehicle's stored still image and save the URL on the vehicle record
+  const saveVehicleImage = async (blob: Blob) => {
+    if (!vehicle) return;
+    setSavingImage(true);
+    try {
+      const fileName = `${vehicle.id}-${Date.now()}.jpg`;
+      const { error: uploadError } = await supabase.storage
+        .from('vehicle-photos')
+        .upload(fileName, blob, { contentType: 'image/jpeg', upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrlData } = supabase.storage.from('vehicle-photos').getPublicUrl(fileName);
+
+      const { error: updateError } = await supabase
+        .from('vehicles')
+        .update({ image_url: publicUrlData.publicUrl })
+        .eq('id', vehicle.id);
+
+      if (updateError) throw updateError;
+
+      setVehicle({ ...vehicle, image_url: publicUrlData.publicUrl });
+      setShowImagePicker(false);
+    } catch (error) {
+      console.error('Error saving vehicle image:', error);
+    } finally {
+      setSavingImage(false);
+    }
+  };
+
   return (
     <div className="flex flex-col lg:flex-row h-screen bg-gray-50 overflow-hidden pb-16 lg:pb-0">
       {/* Desktop Sidebar */}
@@ -262,35 +326,35 @@ function DashboardContent() {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col h-full overflow-hidden">
-        {/* Layout Editor Toolbar */}
-        <LayoutEditorToolbar />
-
-        {/* Top Header Bar (Hidden in Edit Mode) */}
-        {!isEditMode && (
-          <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between flex-shrink-0">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full"></span>
-              <span className="text-emerald-600 font-semibold text-sm">Lane 1 Online</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="flex items-center gap-1 border border-emerald-500 text-emerald-600 text-xs font-semibold px-3 py-1 rounded-full">
-                <Radio size={12} /> Live
-              </span>
-              <span className="text-gray-900 font-semibold text-sm">{time}</span>
-            </div>
+        {/* Top Header Bar */}
+        <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full"></span>
+            <span className="text-emerald-600 font-semibold text-sm">Lane 1 Online</span>
           </div>
-        )}
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1 border border-emerald-500 text-emerald-600 text-xs font-semibold px-3 py-1 rounded-full">
+              <Radio size={12} /> Live
+            </span>
+            <span className="text-gray-900 font-semibold text-sm">{time}</span>
+            <ChevronDown size={16} className="text-gray-400" />
+          </div>
+        </div>
 
-        {/* Timeline Strip (Hidden in Edit Mode) */}
-        {!isEditMode && (
-          <div className="bg-white border-b border-gray-200 px-6 py-3 flex-shrink-0">
+        {/* Timeline Strip */}
+        <div className="bg-white border-b border-gray-200 px-6 py-3 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 flex-shrink-0 text-gray-700">
+              <Car size={18} />
+              <span className="text-sm font-semibold leading-tight">Recent<br />Arrivals</span>
+            </div>
             <div className="flex gap-2 overflow-x-auto">
               {recentArrivals.map((item) => (
                 <button
                   key={item.plate}
                   onClick={() => fetchVehicleData(item.plate)}
                   className={`flex-shrink-0 px-4 py-2 rounded-lg border-2 text-left transition-colors ${
-                    vehicle?.plate === item.plate ? 'border-emerald-500' : 'border-gray-200 hover:border-gray-300'
+                    vehicle?.plate === item.plate ? 'border-emerald-500 bg-emerald-50' : 'border-gray-200 hover:border-gray-300'
                   }`}
                 >
                   <p className="text-xs text-gray-400">{item.time}</p>
@@ -298,98 +362,127 @@ function DashboardContent() {
                 </button>
               ))}
             </div>
+            <button className="flex-shrink-0 w-8 h-8 rounded-full border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-50 ml-auto">
+              <ChevronRight size={16} />
+            </button>
           </div>
-        )}
+        </div>
 
-        {/* Layout Editor Container */}
-        <LayoutEditorContainer>
-          {isEditMode ? (
-            <div className="relative w-full h-full p-4">
-              <div className="relative w-full h-full min-h-screen">
-                <DraggablePanel id="vehicle-card" title="Vehicle Card" className="bg-white">
-                  <VehicleCardSection vehicle={vehicle} />
-                </DraggablePanel>
-                <DraggablePanel id="customers" title="Customers" className="bg-purple-50">
-                  <CustomersSection vehicleCustomers={vehicleCustomers} selectedCustomer={selectedCustomer} onSelectCustomer={setSelectedCustomer} />
-                </DraggablePanel>
-                <DraggablePanel id="notes-loyalty" title="Notes & Loyalty" className="bg-gray-50">
-                  <NotesLoyaltySection selectedCustomer={selectedCustomer} />
-                </DraggablePanel>
-                <DraggablePanel id="orders" title="Orders" className="bg-white">
-                  <OrdersSection />
-                </DraggablePanel>
-                <DraggablePanel id="camera" title="Live Camera" className="bg-slate-900">
-                  <CameraSection />
-                </DraggablePanel>
-                <DraggablePanel id="detected-plates" title="Detected Plates" className="bg-blue-600">
-                  <DetectedPlatesSection vehicle={vehicle} time={time} />
-                </DraggablePanel>
-                <DraggablePanel id="lane-status" title="Lane Status" className="bg-emerald-50">
+        {/* Main Content Grid */}
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 h-full">
+            {/* LEFT COLUMN */}
+            <div className="lg:col-span-3 space-y-6 flex flex-col">
+              {/* Vehicle Card */}
+              <div className="bg-white rounded-lg shadow-sm">
+                <VehicleCardSection vehicle={vehicle} onStoreImage={() => setShowImagePicker(true)} />
+              </div>
+
+              {/* Customers Section */}
+              <div className="bg-purple-50 rounded-lg shadow-sm">
+                <CustomersSection 
+                  vehicleCustomers={vehicleCustomers} 
+                  selectedCustomer={selectedCustomer} 
+                  onSelectCustomer={setSelectedCustomer} 
+                />
+              </div>
+
+              {/* Notes & Loyalty */}
+              <div className="bg-gray-50 rounded-lg shadow-sm flex-1">
+                <NotesLoyaltySection selectedCustomer={selectedCustomer} />
+              </div>
+
+              {/* Orders */}
+              <div className="bg-white rounded-lg shadow-sm">
+                <OrdersSection />
+              </div>
+            </div>
+
+            {/* RIGHT COLUMN */}
+            <div className="lg:col-span-2 space-y-6 flex flex-col">
+              {/* Live Camera */}
+              <div className="bg-slate-900 rounded-lg shadow-sm h-64">
+                <CameraSection />
+              </div>
+
+              {/* Detected Plates */}
+              <div className="bg-blue-600 rounded-lg shadow-sm">
+                <DetectedPlatesSection vehicle={vehicle} time={time} />
+              </div>
+
+              {/* Lane Status & Top Items */}
+              <div className="grid grid-cols-2 gap-6">
+                <div className="bg-emerald-50 rounded-lg shadow-sm">
                   <LaneStatusSection />
-                </DraggablePanel>
-                <DraggablePanel id="top-items" title="Top Items" className="bg-white">
+                </div>
+                <div className="bg-white rounded-lg shadow-sm">
                   <TopItemsSection />
-                </DraggablePanel>
-                <DraggablePanel id="recognition" title="Recognition Confidence" className="bg-white">
-                  <RecognitionConfidenceSection />
-                </DraggablePanel>
-              </div>
-            </div>
-          ) : (
-            <div className="flex-1 overflow-y-auto p-4">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {/* LEFT COLUMN */}
-                <div className="space-y-4">
-                  <DraggablePanel id="vehicle-card" title="Vehicle Card" className="bg-white">
-                    <VehicleCardSection vehicle={vehicle} />
-                  </DraggablePanel>
-                  <DraggablePanel id="customers" title="Customers" className="bg-purple-50">
-                    <CustomersSection vehicleCustomers={vehicleCustomers} selectedCustomer={selectedCustomer} onSelectCustomer={setSelectedCustomer} />
-                  </DraggablePanel>
-                  <DraggablePanel id="notes-loyalty" title="Notes & Loyalty" className="bg-gray-50">
-                    <NotesLoyaltySection selectedCustomer={selectedCustomer} />
-                  </DraggablePanel>
-                  <DraggablePanel id="orders" title="Orders" className="bg-white">
-                    <OrdersSection />
-                  </DraggablePanel>
                 </div>
+              </div>
 
-                {/* RIGHT COLUMN */}
-                <div className="space-y-4">
-                  <DraggablePanel id="camera" title="Live Camera" className="bg-slate-900">
-                    <CameraSection />
-                  </DraggablePanel>
-                  <DraggablePanel id="detected-plates" title="Detected Plates" className="bg-blue-600">
-                    <DetectedPlatesSection vehicle={vehicle} time={time} />
-                  </DraggablePanel>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <DraggablePanel id="lane-status" title="Lane Status" className="bg-emerald-50">
-                      <LaneStatusSection />
-                    </DraggablePanel>
-                    <DraggablePanel id="top-items" title="Top Items" className="bg-white">
-                      <TopItemsSection />
-                    </DraggablePanel>
-                  </div>
-                  <DraggablePanel id="recognition" title="Recognition Confidence" className="bg-white">
-                    <RecognitionConfidenceSection />
-                  </DraggablePanel>
-                </div>
+              {/* Recognition Confidence */}
+              <div className="bg-white rounded-lg shadow-sm">
+                <RecognitionConfidenceSection />
               </div>
             </div>
-          )}
-        </LayoutEditorContainer>
+          </div>
+        </div>
       </main>
 
       {/* Bottom Navigation for Tablet/Mobile */}
       <BottomNav />
+
+      {/* Vehicle Image Picker Modal */}
+      {showImagePicker && (
+        <div
+          className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
+          onClick={() => !savingImage && setShowImagePicker(false)}
+        >
+          <div className="bg-white rounded-xl p-4 max-w-2xl w-full max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3 flex-shrink-0">
+              <h3 className="font-bold text-gray-900">
+                Select a still image for {vehicle?.plate || 'this vehicle'}
+              </h3>
+              <button
+                onClick={() => !savingImage && setShowImagePicker(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mb-3 flex-shrink-0">
+              Choose the clearest frame from the footage of this vehicle entering the drive-through.
+            </p>
+            {frameBuffer.length === 0 ? (
+              <p className="text-sm text-gray-500">
+                No footage buffered yet. Keep this vehicle in view for a few seconds while frames are captured.
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 overflow-y-auto">
+                {frameBuffer.map((frame) => (
+                  <button
+                    key={frame.timestamp}
+                    onClick={() => saveVehicleImage(frame.blob)}
+                    disabled={savingImage}
+                    className="relative rounded-lg overflow-hidden border-2 border-transparent hover:border-emerald-500 aspect-video disabled:opacity-50"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={frame.url} alt="Captured frame" className="w-full h-full object-cover" />
+                    <span className="absolute bottom-0 right-0 bg-black/60 text-white text-[10px] px-1">
+                      {new Date(frame.timestamp).toLocaleTimeString('en-GB', { hour12: false })}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {savingImage && <p className="text-xs text-emerald-600 mt-2 flex-shrink-0">Saving selected frame…</p>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 export default function Home() {
-  return (
-    <LayoutProvider>
-      <DashboardContent />
-    </LayoutProvider>
-  );
+  return <DashboardContent />;
 }

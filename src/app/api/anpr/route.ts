@@ -2,40 +2,53 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
   try {
-    const { imageUrl } = await request.json();
     const apiKey = process.env.NEXT_PUBLIC_PLATE_RECOGNIZER_API_KEY;
-
-    console.log('[ANPR] imageUrl:', imageUrl);
     console.log('[ANPR] apiKey present:', !!apiKey);
 
     if (!apiKey) {
       return NextResponse.json({ error: 'Plate Recognizer API key not configured' }, { status: 500 });
     }
 
-    if (!imageUrl) {
-      return NextResponse.json({ error: 'Image URL required' }, { status: 400 });
+    const contentType = request.headers.get('content-type') || '';
+    let imageBuffer: ArrayBuffer;
+
+    if (contentType.includes('multipart/form-data')) {
+      // Image sent directly from the client (avoids a duplicate camera capture)
+      const incomingForm = await request.formData();
+      const file = incomingForm.get('image');
+      if (!file || !(file instanceof Blob)) {
+        return NextResponse.json({ error: 'Image file required' }, { status: 400 });
+      }
+      imageBuffer = await file.arrayBuffer();
+    } else {
+      const { imageUrl } = await request.json();
+      console.log('[ANPR] imageUrl:', imageUrl);
+
+      if (!imageUrl) {
+        return NextResponse.json({ error: 'Image URL required' }, { status: 400 });
+      }
+
+      // Convert relative URL to absolute URL for server-side fetch
+      const absoluteUrl = imageUrl.startsWith('http')
+        ? imageUrl
+        : `${request.headers.get('x-forwarded-proto') || 'http'}://${request.headers.get('host')}${imageUrl}`;
+
+      console.log('[ANPR] Fetching from absolute URL:', absoluteUrl);
+      const imageResponse = await fetch(absoluteUrl);
+      console.log('[ANPR] snapshot status:', imageResponse.status, imageResponse.headers.get('content-type'));
+
+      if (!imageResponse.ok) {
+        return NextResponse.json(
+          {
+            error: 'Failed to fetch camera snapshot',
+            detail: `Snapshot fetch failed with status ${imageResponse.status}`,
+          },
+          { status: 502 }
+        );
+      }
+
+      imageBuffer = await imageResponse.arrayBuffer();
     }
-
-    // Convert relative URL to absolute URL for server-side fetch
-    const absoluteUrl = imageUrl.startsWith('http') 
-      ? imageUrl 
-      : `${request.headers.get('x-forwarded-proto') || 'http'}://${request.headers.get('host')}${imageUrl}`;
-    
-    console.log('[ANPR] Fetching from absolute URL:', absoluteUrl);
-    const imageResponse = await fetch(absoluteUrl);
-    console.log('[ANPR] snapshot status:', imageResponse.status, imageResponse.headers.get('content-type'));
-
-    if (!imageResponse.ok) {
-      return NextResponse.json(
-        {
-          error: 'Failed to fetch camera snapshot',
-          detail: `Snapshot fetch failed with status ${imageResponse.status}`,
-        },
-        { status: 502 }
-      );
-    }
-
-    const imageBuffer = await imageResponse.arrayBuffer();
 
     const formData = new FormData();
     formData.append('upload', new Blob([imageBuffer], { type: 'image/jpeg' }), 'snapshot.jpg');

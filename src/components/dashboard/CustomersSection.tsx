@@ -16,13 +16,13 @@ export const CustomersSection: React.FC<CustomersSectionProps> = ({ vehicleCusto
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <Users size={16} className="text-purple-600" />
-          <p className="text-sm font-bold text-gray-900">Customers</p>
+          <p className="text-sm font-bold text-gray-900">Customers Using This Vehicle</p>
         </div>
         <span className="bg-purple-200 text-purple-700 text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0">
           {vehicleCustomers.length}
         </span>
       </div>
-      <div className="space-y-2">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
         {vehicleCustomers.map((vc) => (
           <div
             key={vc.id}
