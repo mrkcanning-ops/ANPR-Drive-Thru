@@ -36,7 +36,17 @@ function DashboardContent() {
   const [detectedVehicleData, setDetectedVehicleData] = useState<any>(null);
 
   // Recent arrivals timeline - auto-feeds as new plates are detected
-  const [recentArrivals, setRecentArrivals] = useState<{ time: string; plate: string }[]>([]);
+  // Load from localStorage on mount to persist across page refreshes
+  const [recentArrivals, setRecentArrivals] = useState<{ time: string; plate: string }[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const stored = localStorage.getItem('recentArrivals');
+      return stored ? JSON.parse(stored) : [];
+    } catch (e) {
+      console.error('Error loading recent arrivals from localStorage:', e);
+      return [];
+    }
+  });
 
   // Rolling buffer of recently captured frames, used to pick a still image to store per-vehicle
   const [frameBuffer, setFrameBuffer] = useState<FrameCapture[]>([]);
@@ -69,6 +79,15 @@ function DashboardContent() {
     const interval = setInterval(updateTime, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  // Persist recent arrivals to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('recentArrivals', JSON.stringify(recentArrivals));
+    } catch (e) {
+      console.error('Error saving recent arrivals to localStorage:', e);
+    }
+  }, [recentArrivals]);
 
   // Refresh camera snapshot every 100ms (10 fps)
   useEffect(() => {
