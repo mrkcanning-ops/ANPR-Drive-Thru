@@ -418,8 +418,9 @@ function DashboardContent() {
           {
             plate: normalizedPlate,
             description: vehicleInfo || 'Unknown vehicle',
-            make: '',
-            model: '',
+            colour: 'Unknown', // Default color since it has NOT NULL constraint
+            make: null,
+            model: null,
             year: new Date().getFullYear(),
           },
         ])
