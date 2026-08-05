@@ -367,8 +367,10 @@ function DashboardContent() {
     try {
       // Normalize plate: remove spaces and convert to uppercase for consistent storage
       const normalizedPlate = plate.replace(/\s+/g, '').toUpperCase();
+      console.log(`[ADD-VEHICLE] Starting vehicle/driver creation for plate: "${normalizedPlate}"`);
       
       // Create a new customer (driver)
+      console.log(`[ADD-VEHICLE] Step 1: Creating customer "${driverName}"...`);
       const { data: newCustomer, error: customerError } = await supabase
         .from('customers')
         .insert([
@@ -382,9 +384,14 @@ function DashboardContent() {
         .select()
         .single();
 
-      if (customerError) throw customerError;
+      if (customerError) {
+        console.error(`[ADD-VEHICLE] ERROR creating customer:`, customerError);
+        throw customerError;
+      }
+      console.log(`[ADD-VEHICLE] Step 1 Complete: Customer created with ID ${newCustomer.id}`);
 
       // Create a new vehicle
+      console.log(`[ADD-VEHICLE] Step 2: Creating vehicle with plate "${normalizedPlate}"...`);
       const { data: newVehicle, error: vehicleError } = await supabase
         .from('vehicles')
         .insert([
@@ -399,9 +406,14 @@ function DashboardContent() {
         .select()
         .single();
 
-      if (vehicleError) throw vehicleError;
+      if (vehicleError) {
+        console.error(`[ADD-VEHICLE] ERROR creating vehicle:`, vehicleError);
+        throw vehicleError;
+      }
+      console.log(`[ADD-VEHICLE] Step 2 Complete: Vehicle created with ID ${newVehicle.id}`);
 
       // Link the vehicle to the customer as primary driver
+      console.log(`[ADD-VEHICLE] Step 3: Linking vehicle ${newVehicle.id} to customer ${newCustomer.id}...`);
       const { error: linkError } = await supabase
         .from('vehicle_customers')
         .insert([
@@ -413,12 +425,18 @@ function DashboardContent() {
           },
         ]);
 
-      if (linkError) throw linkError;
+      if (linkError) {
+        console.error(`[ADD-VEHICLE] ERROR linking vehicle to customer:`, linkError);
+        throw linkError;
+      }
+      console.log(`[ADD-VEHICLE] Step 3 Complete: Vehicle linked to customer`);
 
       // Fetch the updated vehicle data to populate the modal
+      console.log(`[ADD-VEHICLE] Step 4: Fetching vehicle data for plate "${normalizedPlate}"...`);
       await fetchVehicleData(normalizedPlate);
+      console.log(`[ADD-VEHICLE] SUCCESS: Vehicle and driver added successfully`);
     } catch (error) {
-      console.error('Error adding vehicle and driver:', error);
+      console.error(`[ADD-VEHICLE] EXCEPTION:`, error);
       throw error;
     }
   };
