@@ -81,9 +81,9 @@ function DashboardContent() {
     const cameraInterval = setInterval(() => {
       setCameraRefresh(prev => {
         const newValue = prev + 1;
-        // Run ANPR processing every 20 frames (0.5 fps at 100ms = 2 sec processing)
-        // This prevents rate limiting on Plate Recognizer API (free tier limit)
-        if (newValue % 20 === 0 && !anprProcessing) {
+        // Run ANPR processing every 60 frames (0.167 fps at 100ms = 6 sec processing)
+        // This prevents rate limiting on Plate Recognizer API (free tier: ~10 req/min)
+        if (newValue % 60 === 0 && !anprProcessing) {
           processAnpr();
         }
         return newValue;
@@ -123,11 +123,24 @@ function DashboardContent() {
   // then sends the same image directly to the ANPR endpoint (no duplicate capture).
   const processAnpr = async () => {
     setAnprProcessing(true);
+    const debugTimestamp = new Date().toLocaleTimeString('en-GB', { hour12: false });
+    console.log(`[ANPR-DEBUG ${debugTimestamp}] ========== ANPR CYCLE START ==========`);
+    
     try {
+      // STEP 1: Capture frame from camera
+      console.log(`[ANPR-DEBUG ${debugTimestamp}] Step 1: Fetching camera snapshot...`);
       const snapshotRes = await fetch(`/api/camera?t=${cameraRefresh}`);
-      if (!snapshotRes.ok) return;
+      console.log(`[ANPR-DEBUG ${debugTimestamp}] Step 1 Result: status=${snapshotRes.status}`);
+      
+      if (!snapshotRes.ok) {
+        console.error(`[ANPR-DEBUG ${debugTimestamp}] ERROR: Camera API returned ${snapshotRes.status}. Response:`, await snapshotRes.text());
+        return;
+      }
+      
       const blob = await snapshotRes.blob();
+      console.log(`[ANPR-DEBUG ${debugTimestamp}] Step 1 Complete: Received blob of size ${blob.size} bytes`);
 
+      // Buffer frame for image picker
       const frameUrl = URL.createObjectURL(blob);
       setFrameBuffer(prev => {
         const dropped = prev.slice(MAX_FRAME_BUFFER - 1);
@@ -135,6 +148,8 @@ function DashboardContent() {
         return [{ blob, url: frameUrl, timestamp: Date.now() }, ...prev].slice(0, MAX_FRAME_BUFFER);
       });
 
+      // STEP 2: Send blob to ANPR endpoint
+      console.log(`[ANPR-DEBUG ${debugTimestamp}] Step 2: Sending blob to ANPR endpoint...`);
       const formData = new FormData();
       formData.append('image', blob, 'snapshot.jpg');
 
@@ -143,25 +158,43 @@ function DashboardContent() {
         body: formData,
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.plates && data.plates.length > 0) {
-          setDetectedPlates(data.plates);
-          // Auto-select the highest confidence plate
-          const topPlate = data.plates.reduce((max: any, plate: any) =>
-            (plate.confidence > max.confidence) ? plate : max
-          );
-          if (topPlate?.plate) {
-            fetchVehicleData(topPlate.plate);
-            registerArrival(topPlate.plate);
-          }
+      console.log(`[ANPR-DEBUG ${debugTimestamp}] Step 2 Result: status=${response.status}`);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[ANPR-DEBUG ${debugTimestamp}] ERROR: ANPR endpoint returned ${response.status}. Response:`, errorText);
+        return;
+      }
+
+      const data = await response.json();
+      console.log(`[ANPR-DEBUG ${debugTimestamp}] Step 2 Complete: ANPR response:`, data);
+
+      // STEP 3: Process detected plates
+      console.log(`[ANPR-DEBUG ${debugTimestamp}] Step 3: Processing plates...`);
+      if (data.plates && data.plates.length > 0) {
+        console.log(`[ANPR-DEBUG ${debugTimestamp}] Found ${data.plates.length} plate(s):`, data.plates.map((p: any) => `${p.plate} (conf: ${p.confidence})`));
+        setDetectedPlates(data.plates);
+        
+        // Auto-select the highest confidence plate
+        const topPlate = data.plates.reduce((max: any, plate: any) =>
+          (plate.confidence > max.confidence) ? plate : max
+        );
+        
+        if (topPlate?.plate) {
+          console.log(`[ANPR-DEBUG ${debugTimestamp}] Top plate: ${topPlate.plate} with confidence ${topPlate.confidence}`);
+          fetchVehicleData(topPlate.plate);
+          registerArrival(topPlate.plate);
+          console.log(`[ANPR-DEBUG ${debugTimestamp}] Registered arrival: ${topPlate.plate}`);
         }
+      } else {
+        console.log(`[ANPR-DEBUG ${debugTimestamp}] No plates detected in frame`);
       }
     } catch (error) {
-      console.error('ANPR processing error:', error);
+      console.error(`[ANPR-DEBUG ${debugTimestamp}] EXCEPTION during ANPR processing:`, error);
     } finally {
       setAnprProcessing(false);
       setLastAnprTime(Date.now());
+      console.log(`[ANPR-DEBUG ${debugTimestamp}] ========== ANPR CYCLE END ==========\n`);
     }
   };
 
@@ -358,7 +391,7 @@ function DashboardContent() {
                   }`}
                 >
                   <p className="text-xs text-gray-400">{item.time}</p>
-                  <p className="text-sm font-bold text-gray-900">{item.plate}</p>
+                  <p className="text-sm font-bold text-gray-900">{item.plate.toUpperCase()}</p>
                 </button>
               ))}
             </div>

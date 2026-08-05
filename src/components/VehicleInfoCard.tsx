@@ -97,7 +97,7 @@ function PlateSvg({ plate }: { plate: string }) {
         textAnchor="middle"
         letterSpacing="2"
       >
-        {plate}
+        {plate.toUpperCase()}
       </text>
     </svg>
   );

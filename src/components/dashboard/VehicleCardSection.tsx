@@ -35,7 +35,7 @@ export const VehicleCardSection: React.FC<VehicleCardSectionProps> = ({ vehicle,
               GB
             </text>
             <text x="325" y="128" fontFamily="'Arial Black', Arial, sans-serif" fontSize="80" fontWeight="900" fill="#000000" textAnchor="middle" letterSpacing="2">
-              {vehicle?.plate || 'AB12 CDE'}
+              {(vehicle?.plate || 'AB12 CDE').toUpperCase()}
             </text>
           </svg>
         </div>
@@ -49,7 +49,7 @@ export const VehicleCardSection: React.FC<VehicleCardSectionProps> = ({ vehicle,
                 className="w-full h-full object-cover absolute inset-0"
               />
               <span className="absolute bottom-2 left-2 bg-black/70 text-white text-sm sm:text-base font-bold px-2 py-1 rounded">
-                {vehicle?.plate || 'AB12 CDE'}
+                {(vehicle?.plate || 'AB12 CDE').toUpperCase()}
               </span>
               {onStoreImage && (
                 <button
