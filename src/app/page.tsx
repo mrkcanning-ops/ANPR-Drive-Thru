@@ -396,8 +396,8 @@ function DashboardContent() {
           {
             customer_number: nextCustomerNumber,
             name: driverName,
-            email: '',
-            phone: '',
+            email: null, // Use NULL instead of empty string to avoid unique constraint violation
+            phone: null, // Use NULL instead of empty string
             loyalty_points: 0,
           },
         ])
