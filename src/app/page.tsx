@@ -369,48 +369,49 @@ function DashboardContent() {
       const normalizedPlate = plate.replace(/\s+/g, '').toUpperCase();
       console.log(`[ADD-VEHICLE] Starting vehicle/driver creation for plate: "${normalizedPlate}"`);
       
-      // Step 1: Check if customer with this name already exists
-      console.log(`[ADD-VEHICLE] Step 1: Checking if customer "${driverName}" exists...`);
-      let newCustomer = null;
-      const { data: existingCustomers, error: searchError } = await supabase
+      // Step 1: Get the next sequential customer number
+      console.log(`[ADD-VEHICLE] Step 1: Finding next customer number...`);
+      const { data: allCustomers, error: fetchError } = await supabase
         .from('customers')
-        .select('*')
-        .ilike('name', driverName)
-        .single();
+        .select('customer_number')
+        .order('customer_number', { ascending: false })
+        .limit(1);
 
-      if (searchError && searchError.code !== 'PGRST116') {
-        // PGRST116 = no rows returned (which is what we expect if customer doesn't exist)
-        console.error(`[ADD-VEHICLE] ERROR searching for existing customer:`, searchError);
-      } else if (existingCustomers) {
-        // Customer already exists - reuse it
-        console.log(`[ADD-VEHICLE] Step 1 Complete: Found existing customer with ID ${existingCustomers.id}`);
-        newCustomer = existingCustomers;
-      } else {
-        // Customer doesn't exist - create new one
-        console.log(`[ADD-VEHICLE] Step 1 Result: Customer not found, creating new one...`);
-        const { data: createdCustomer, error: customerError } = await supabase
-          .from('customers')
-          .insert([
-            {
-              name: driverName,
-              email: '',
-              phone: '',
-              loyalty_points: 0,
-            },
-          ])
-          .select()
-          .single();
-
-        if (customerError) {
-          console.error(`[ADD-VEHICLE] ERROR creating customer:`, customerError);
-          throw customerError;
-        }
-        console.log(`[ADD-VEHICLE] Step 1 Complete: Customer created with ID ${createdCustomer.id}`);
-        newCustomer = createdCustomer;
+      if (fetchError) {
+        console.error(`[ADD-VEHICLE] ERROR fetching max customer number:`, fetchError);
+        throw fetchError;
       }
 
-      // Create a new vehicle
-      console.log(`[ADD-VEHICLE] Step 2: Creating vehicle with plate "${normalizedPlate}"...`);
+      const nextCustomerNumber = (allCustomers && allCustomers.length > 0) 
+        ? allCustomers[0].customer_number + 1 
+        : 1;
+      
+      console.log(`[ADD-VEHICLE] Step 1 Complete: Next customer number will be ${nextCustomerNumber}`);
+
+      // Step 2: Create new customer with sequential number
+      console.log(`[ADD-VEHICLE] Step 2: Creating customer #${nextCustomerNumber} "${driverName}"...`);
+      const { data: newCustomer, error: customerError } = await supabase
+        .from('customers')
+        .insert([
+          {
+            customer_number: nextCustomerNumber,
+            name: driverName,
+            email: '',
+            phone: '',
+            loyalty_points: 0,
+          },
+        ])
+        .select()
+        .single();
+
+      if (customerError) {
+        console.error(`[ADD-VEHICLE] ERROR creating customer:`, customerError);
+        throw customerError;
+      }
+      console.log(`[ADD-VEHICLE] Step 2 Complete: Customer #${nextCustomerNumber} created with ID ${newCustomer.id}`);
+
+      // Step 3: Create a new vehicle
+      console.log(`[ADD-VEHICLE] Step 3: Creating vehicle with plate "${normalizedPlate}"...`);
       const { data: newVehicle, error: vehicleError } = await supabase
         .from('vehicles')
         .insert([
@@ -429,10 +430,10 @@ function DashboardContent() {
         console.error(`[ADD-VEHICLE] ERROR creating vehicle:`, vehicleError);
         throw vehicleError;
       }
-      console.log(`[ADD-VEHICLE] Step 2 Complete: Vehicle created with ID ${newVehicle.id}`);
+      console.log(`[ADD-VEHICLE] Step 3 Complete: Vehicle created with ID ${newVehicle.id}`);
 
-      // Link the vehicle to the customer as primary driver
-      console.log(`[ADD-VEHICLE] Step 3: Linking vehicle ${newVehicle.id} to customer ${newCustomer.id}...`);
+      // Step 4: Link the vehicle to the customer as primary driver
+      console.log(`[ADD-VEHICLE] Step 4: Linking vehicle ${newVehicle.id} to customer #${nextCustomerNumber}...`);
       const { error: linkError } = await supabase
         .from('vehicle_customers')
         .insert([
@@ -448,12 +449,12 @@ function DashboardContent() {
         console.error(`[ADD-VEHICLE] ERROR linking vehicle to customer:`, linkError);
         throw linkError;
       }
-      console.log(`[ADD-VEHICLE] Step 3 Complete: Vehicle linked to customer`);
+      console.log(`[ADD-VEHICLE] Step 4 Complete: Vehicle linked to customer`);
 
-      // Fetch the updated vehicle data to populate the modal
-      console.log(`[ADD-VEHICLE] Step 4: Fetching vehicle data for plate "${normalizedPlate}"...`);
+      // Step 5: Fetch the updated vehicle data to populate the modal
+      console.log(`[ADD-VEHICLE] Step 5: Fetching vehicle data for plate "${normalizedPlate}"...`);
       await fetchVehicleData(normalizedPlate);
-      console.log(`[ADD-VEHICLE] SUCCESS: Vehicle and driver added successfully`);
+      console.log(`[ADD-VEHICLE] SUCCESS: Vehicle and customer #${nextCustomerNumber} added successfully`);
     } catch (error) {
       console.error(`[ADD-VEHICLE] EXCEPTION:`, error);
       throw error;

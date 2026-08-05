@@ -133,7 +133,10 @@ export const PlateRecognitionModal: React.FC<PlateRecognitionModalProps> = ({
                       }`}
                     >
                       <div className="flex items-center justify-between">
-                        <span>{vc.customer.name}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-lg">#{vc.customer.customer_number}</span>
+                          <span>{vc.customer.name}</span>
+                        </div>
                         {vc.primary_driver && (
                           <span className="text-xs bg-white/20 px-2 py-0.5 rounded">Primary</span>
                         )}

@@ -32,8 +32,8 @@ export const CustomersSection: React.FC<CustomersSectionProps> = ({ vehicleCusto
             }`}
           >
             <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
-                <User size={14} className="text-purple-500" />
+              <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0 text-xs font-bold text-purple-600">
+                {vc.customer?.customer_number}
               </div>
               <div className="min-w-0">
                 <p className="text-sm font-bold text-gray-900 truncate">{vc.customer?.name}</p>

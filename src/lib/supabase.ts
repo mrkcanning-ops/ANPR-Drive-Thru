@@ -46,6 +46,7 @@ export interface Vehicle {
 
 export interface Customer {
   id: string;
+  customer_number: number; // Sequential customer ID (1, 2, 3, etc)
   name: string;
   email?: string;
   phone?: string;
