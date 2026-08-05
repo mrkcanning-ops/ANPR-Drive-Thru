@@ -77,7 +77,13 @@ export const PlateRecognitionModal: React.FC<PlateRecognitionModalProps> = ({
       setNewVehicleInfo('');
       onClose();
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      let errorMessage = 'Unknown error';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'object' && error !== null) {
+        // Handle Supabase error objects
+        errorMessage = (error as any).message || JSON.stringify(error);
+      }
       console.error('Error adding vehicle:', error);
       alert(`Failed to add vehicle: ${errorMessage}`);
     } finally {
