@@ -236,15 +236,15 @@ function DashboardContent() {
       const normalizedPlate = plate.replace(/\s+/g, '').toUpperCase();
       console.log(`[ANPR-DEBUG] Fetching vehicle for plate: "${plate}" (normalized: "${normalizedPlate}")`);
       
-      // Fetch vehicle by plate (case-insensitive search)
+      // Fetch vehicle by plate using case-insensitive search (ilike)
       const { data: vehicleData, error: vehicleError } = await supabase
         .from('vehicles')
         .select('*')
-        .eq('plate', normalizedPlate)
+        .ilike('plate', normalizedPlate)
         .single();
 
       if (vehicleError) {
-        console.error('Error fetching vehicle:', vehicleError);
+        console.error(`[ANPR-DEBUG] Vehicle query error for "${normalizedPlate}":`, vehicleError.message);
         // Clear vehicle state if not found
         setVehicle(null);
         setVehicleCustomers([]);
@@ -252,6 +252,7 @@ function DashboardContent() {
         return;
       }
 
+      console.log(`[ANPR-DEBUG] Vehicle found in database:`, vehicleData);
       setVehicle(vehicleData);
 
       // Fetch customers linked to this vehicle
