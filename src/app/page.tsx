@@ -255,30 +255,60 @@ function DashboardContent() {
       const normalizedPlate = plate.replace(/\s+/g, '').toUpperCase();
       console.log(`[ANPR-DEBUG] Fetching vehicle for plate: "${plate}" (normalized: "${normalizedPlate}")`);
       
-      // Fetch vehicle by plate using case-insensitive search (ilike)
-      const { data: vehicleData, error: vehicleError } = await supabase
+      // Try multiple query approaches for robustness
+      // Approach 1: Direct case-insensitive query
+      let { data: vehicleData, error: vehicleError } = await supabase
         .from('vehicles')
         .select('*')
-        .ilike('plate', normalizedPlate)
-        .single();
+        .ilike('plate', normalizedPlate);
 
       if (vehicleError) {
-        console.error(`[ANPR-DEBUG] Vehicle query error for "${normalizedPlate}":`, vehicleError.message);
+        console.error(`[ANPR-DEBUG] Query error (ilike):`, vehicleError.message);
+      } else if (vehicleData && vehicleData.length > 0) {
+        console.log(`[ANPR-DEBUG] Found ${vehicleData.length} vehicle(s) with ilike. Using first match:`, vehicleData[0]);
+        setVehicle(vehicleData[0]);
+      } else {
+        // Approach 2: Fetch all vehicles and filter client-side for debugging
+        console.log(`[ANPR-DEBUG] No results from ilike, fetching all vehicles for manual comparison...`);
+        const { data: allVehicles, error: allError } = await supabase
+          .from('vehicles')
+          .select('plate');
+
+        if (allError) {
+          console.error(`[ANPR-DEBUG] Error fetching all vehicles:`, allError.message);
+        } else {
+          console.log(`[ANPR-DEBUG] Total vehicles in database: ${allVehicles?.length || 0}`);
+          if (allVehicles) {
+            allVehicles.forEach((v: any) => {
+              console.log(`[ANPR-DEBUG]   DB plate: "${v.plate}" | Normalized input: "${normalizedPlate}" | Match: ${v.plate.toUpperCase() === normalizedPlate}`);
+            });
+          }
+        }
+        
         // Clear vehicle state if not found
+        console.log(`[ANPR-DEBUG] Vehicle not found for plate: "${normalizedPlate}"`);
         setVehicle(null);
         setVehicleCustomers([]);
         setSelectedCustomer(null);
         return;
       }
 
-      console.log(`[ANPR-DEBUG] Vehicle found in database:`, vehicleData);
-      setVehicle(vehicleData);
+      if (!vehicleData) {
+        console.log(`[ANPR-DEBUG] Vehicle not found for plate: "${normalizedPlate}"`);
+        setVehicle(null);
+        setVehicleCustomers([]);
+        setSelectedCustomer(null);
+        return;
+      }
+
+      console.log(`[ANPR-DEBUG] Vehicle found in database:`, vehicleData[0]);
+      setVehicle(vehicleData[0]);
 
       // Fetch customers linked to this vehicle
       const { data: customersData, error: customersError } = await supabase
         .from('vehicle_customers')
         .select('*, customer:customer_id(*)')
-        .eq('vehicle_id', vehicleData.id);
+        .eq('vehicle_id', vehicleData[0].id);
 
       if (customersError) {
         console.error('Error fetching vehicle customers:', customersError);
